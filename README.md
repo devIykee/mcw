@@ -1,6 +1,6 @@
 # 🚀 Multi-Chain CLI Wallet (MCW) & Agentic Framework
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-Standard%20Server-green.svg)](https://modelcontextprotocol.io/)
 [![npm package](https://img.shields.io/badge/npm-@deviykee/mcw-red.svg)](https://www.npmjs.com/package/@deviykee/mcw)
