@@ -39,7 +39,7 @@ export function saveVaultFile(vaultFile: WalletVaultFile): void {
 export function loadVaultFile(): WalletVaultFile {
   const filePath = getVaultFilePath();
   if (!fs.existsSync(filePath)) {
-    throw new Error(`Wallet not initialized. Run 'mc-twaf init' (or 'npx @deviykee/mc-twaf init') first.`);
+    throw new Error(`Wallet not initialized. Run 'mcw init' (or 'npx @deviykee/mcw init') first.`);
   }
 
   const rawData = fs.readFileSync(filePath, 'utf8');

@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-Standard%20Server-green.svg)](https://modelcontextprotocol.io/)
-[![npm package](https://img.shields.io/badge/npm-@deviykee/mc--twaf-red.svg)](https://www.npmjs.com/package/@deviykee/mc-twaf)
+[![npm package](https://img.shields.io/badge/npm-@deviykee/mcw-red.svg)](https://www.npmjs.com/package/@deviykee/mcw)
 
 A robust, enterprise-grade multi-chain wallet and AI agent framework serving two primary consumers seamlessly:
 1. **Humans:** Via a rich, interactive, and beautiful Command Line Interface (**`mcw`**).
@@ -24,7 +24,7 @@ A robust, enterprise-grade multi-chain wallet and AI agent framework serving two
 
 ## ⚡ Quick Start (CLI: `mcw`)
 
-You can run `mcw` globally on your machine (via `npm link` or `npm i -g @deviykee/mc-twaf`) or with **zero installation** via `npx @deviykee/mc-twaf`.
+You can run `mcw` globally on your machine (via `npm link` or `npm i -g @deviykee/mcw`) or with **zero installation** via `npx @deviykee/mcw`.
 
 ### 1. Initialize Wallet
 Generates a fresh 12/24-word BIP-39 mnemonic phrase (or imports an existing one), encrypts the vault using **AES-256-GCM with Scrypt key derivation**, and displays derived addresses:
@@ -32,7 +32,7 @@ Generates a fresh 12/24-word BIP-39 mnemonic phrase (or imports an existing one)
 ```bash
 mcw init
 # Or zero-install:
-npx @deviykee/mc-twaf init
+npx @deviykee/mcw init
 ```
 
 ### 2. Switch Between Testnet & Mainnet
@@ -119,9 +119,9 @@ Add the following to your `claude_desktop_config.json` (or Cursor/Gemini MCP con
 ```json
 {
   "mcpServers": {
-    "mc-wallet": {
+    "mcw": {
       "command": "npx",
-      "args": ["-y", "@deviykee/mc-twaf", "mcp"]
+      "args": ["-y", "@deviykee/mcw", "mcp"]
     }
   }
 }

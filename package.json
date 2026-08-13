@@ -1,17 +1,25 @@
 {
-  "name": "@deviykee/mc-twaf",
-  "version": "1.1.0",
-  "description": "Multi-Chain Testnet Wallet & Agentic Framework for Humans and AI Agents (MCP)",
+  "name": "@deviykee/mcw",
+  "version": "1.0.0",
+  "description": "Multi-Chain CLI Wallet (MCW) & Agentic Framework for Humans and AI Agents (MCP)",
   "main": "dist/index.js",
   "bin": {
     "mcw": "dist/index.js",
-    "mc-twaf": "dist/index.js",
     "mc-wallet": "dist/index.js",
+    "mc-twaf": "dist/index.js",
     "wallet": "dist/index.js"
   },
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devIykee/mcw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/devIykee/mcw/issues"
+  },
+  "homepage": "https://github.com/devIykee/mcw#readme",
   "files": [
     "dist",
     "README.md"
@@ -29,9 +37,12 @@
     "test": "tsx test/wallet.test.ts"
   },
   "keywords": [
+    "mcw",
     "blockchain",
     "wallet",
+    "cli",
     "testnet",
+    "mainnet",
     "bitcoin",
     "ethereum",
     "solana",
@@ -40,7 +51,7 @@
     "model-context-protocol",
     "ai-agent"
   ],
-  "author": "MC-TWAF Team",
+  "author": "devIykee",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.5.0",
@@ -63,7 +74,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/bip39": "^3.0.0",
     "@types/inquirer": "^8.2.6",
     "@types/node": "^22.10.1",
     "rimraf": "^6.0.1",

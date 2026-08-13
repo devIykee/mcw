@@ -139,8 +139,9 @@ export async function initCommand(): Promise<void> {
       },
     ]);
 
-    console.log(chalk.gray('\n▶ Run `mc-twaf balance` to view real-time balances.'));
-    console.log(chalk.gray('▶ Run `mc-twaf network` to switch between Testnet and Mainnet.'));
+    console.log(chalk.gray('\n▶ Run `mcw balance` (or `npx @deviykee/mcw balance`) to view real-time balances.'));
+    console.log(chalk.gray('▶ Run `mcw network` to switch between Testnet and Mainnet.'));
+    console.log(chalk.gray('▶ Run `mcw config` to configure custom RPCs or switch Tron flavors (Nile vs Shasta).'));
   } catch (error: any) {
     spinner.fail(chalk.red(`Failed to initialize wallet: ${error.message}`));
   }

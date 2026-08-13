@@ -6,7 +6,7 @@ import { renderBalanceTable, createSpinner } from '../ui.js';
 
 export async function balanceCommand(chainArg?: string): Promise<void> {
   if (!walletExists()) {
-    console.log(chalk.red('\n❌ Wallet not initialized. Please run `mc-twaf init` (or `npx @deviykee/mc-twaf init`) first.\n'));
+    console.log(chalk.red('\n❌ Wallet not initialized. Please run `mcw init` (or `npx @deviykee/mcw init`) first.\n'));
     return;
   }
 

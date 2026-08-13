@@ -14,8 +14,8 @@ import { approvalGate } from './approvalGate.js';
 export function createMcpServer(): Server {
   const server = new Server(
     {
-      name: 'mc-twaf-mcp-server',
-      version: '1.1.0',
+      name: 'mcw-mcp-server',
+      version: '1.0.0',
     },
     {
       capabilities: {
@@ -221,7 +221,7 @@ export function createMcpServer(): Server {
         content: [
           {
             type: 'text',
-            text: 'ERROR: Wallet not initialized. Please run `mc-twaf init` (or `npx @deviykee/mc-twaf init`) in the CLI first.',
+            text: 'ERROR: Wallet not initialized. Please run `mcw init` (or `npx @deviykee/mcw init`) in the CLI first.',
           },
         ],
         isError: true,
