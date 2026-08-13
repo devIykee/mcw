@@ -22,7 +22,9 @@
   "homepage": "https://github.com/devIykee/mcw#readme",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md"
   ],
   "engines": {
     "node": ">=18.0.0"
