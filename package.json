@@ -24,7 +24,8 @@
     "dist",
     "README.md",
     "LICENSE",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "skills"
   ],
   "engines": {
     "node": ">=18.0.0"

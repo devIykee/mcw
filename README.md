@@ -144,6 +144,19 @@ Add the following to your `claude_desktop_config.json` (or Cursor/Gemini MCP con
 
 ---
 
+## 🧠 Agent Skills (Claude Code, Grok, Cursor, Gemini CLI)
+
+MCW includes standardized **Agent Skills** located in [`skills/mcw/`](file:///home/iyke/coding/cli-wallet/skills/mcw):
+
+- **[`SKILL.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/SKILL.md):** Complete skill specification with YAML frontmatter, execution rules, and multi-chain safety protocols.
+- **[`reference.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/reference.md):** Technical command matrix and MCP JSON-RPC parameter schemas.
+- **[`examples.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/examples.md):** Real-world prompt templates and autonomous workflows.
+
+### Installing Skill in Claude Code / CLI Agents
+Copy the `skills/mcw` directory into your project's `.skills/` or reference `skills/mcw/SKILL.md` directly in your system prompt or custom instructions.
+
+---
+
 ## 🔒 Cryptography & Security Model
 
 - **BIP-39:** Mnemonic seed generation with PBKDF2 HMAC-SHA512.
