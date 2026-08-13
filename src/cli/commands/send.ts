@@ -129,7 +129,14 @@ export async function sendCommand(
     try {
       const mnemonic = unlockVault(password);
       const keys = deriveAllKeys(mnemonic, undefined, mode);
-      const privateKey = keys[chain].privateKey;
+      const privateKey =
+        chain === 'btc'
+          ? keys.btc.privateKey
+          : chain === 'sol'
+          ? keys.sol.privateKey
+          : chain === 'trx'
+          ? keys.trx.privateKey
+          : keys.eth.privateKey;
 
       const result = await adapter.signAndSendTransaction(privateKey, builtTx);
       sendSpinner.succeed(chalk.green(`Transaction successfully broadcast to ${mode}!}`));

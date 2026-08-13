@@ -9,6 +9,10 @@ import {
   setTronTestnetFlavor,
   getChainConfig,
   loadCustomNetworks,
+  addCustomChain,
+  removeCustomChain,
+  loadCustomChains,
+  getAllChains,
 } from '../../config/chains.js';
 
 export async function configCommand(action?: string, chainArg?: string, valueArg?: string): Promise<void> {
@@ -39,6 +43,17 @@ export async function configCommand(action?: string, chainArg?: string, valueArg
     return;
   }
 
+  // Shortcut: mcw config remove-chain <id>
+  if (action === 'remove-chain' && chainArg) {
+    const deleted = removeCustomChain(chainArg);
+    if (deleted) {
+      console.log(chalk.green(`\n✅ Removed custom chain '${chainArg}'.\n`));
+    } else {
+      console.log(chalk.yellow(`\n⚠️  Custom chain '${chainArg}' not found.\n`));
+    }
+    return;
+  }
+
   // Interactive Configuration Menu
   const { choice } = await inquirer.prompt([
     {
@@ -47,7 +62,9 @@ export async function configCommand(action?: string, chainArg?: string, valueArg
       message: '⚙️  Multi-Chain Wallet Configuration:',
       choices: [
         { name: '⚡ Select Tron Testnet (Nile vs Shasta)', value: 'tron_flavor' },
-        { name: '🌐 Set Custom RPC Endpoint for a Chain', value: 'custom_rpc' },
+        { name: '🌐 Set Custom RPC Endpoint for Existing Chain', value: 'custom_rpc' },
+        { name: '➕ Add New Custom EVM Chain / L2 / Local Node', value: 'add_custom_chain' },
+        { name: '🗑️  Remove a Custom Chain', value: 'remove_custom_chain' },
         { name: '📋 View All Active Network Configs & Overrides', value: 'list_configs' },
         { name: '🔄 Reset All Overrides to Default', value: 'reset_defaults' },
       ],
@@ -70,22 +87,21 @@ export async function configCommand(action?: string, chainArg?: string, valueArg
     console.log(chalk.green(`\n✅ Tron testnet set to: ${chalk.bold(flavor.toUpperCase())}\n`));
   } else if (choice === 'custom_rpc') {
     const mode = getNetworkMode();
+    const availableChains = getAllChains(mode);
     const { chain, rpcUrl } = await inquirer.prompt([
       {
         type: 'list',
         name: 'chain',
         message: `Select chain to configure (${mode.toUpperCase()}):`,
-        choices: [
-          { name: 'Ethereum / EVM', value: 'eth' },
-          { name: 'Solana', value: 'sol' },
-          { name: 'Bitcoin', value: 'btc' },
-          { name: 'Tron', value: 'trx' },
-        ],
+        choices: availableChains.map((c) => ({
+          name: `${c.toUpperCase()} (${getChainConfig(c, mode).networkName})`,
+          value: c,
+        })),
       },
       {
         type: 'input',
         name: 'rpcUrl',
-        message: 'Enter custom RPC endpoint URL (e.g. your Alchemy, QuickNode, or custom node):',
+        message: 'Enter custom RPC endpoint URL (e.g. your Alchemy, QuickNode, or local node):',
         validate: (input: string) => {
           if (!input.startsWith('http://') && !input.startsWith('https://')) {
             return 'Please enter a valid HTTP/HTTPS URL.';
@@ -97,24 +113,99 @@ export async function configCommand(action?: string, chainArg?: string, valueArg
 
     saveCustomNetwork(chain as SupportedChain, mode, { rpcUrl });
     console.log(chalk.green(`\n✅ Saved custom RPC for ${chain.toUpperCase()} (${mode}): ${chalk.bold(rpcUrl)}\n`));
+  } else if (choice === 'add_custom_chain') {
+    const mode = getNetworkMode();
+    const answers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'name',
+        message: 'Enter Network Name (e.g. "Base Sepolia", "Polygon Amoy", "Local Anvil"):',
+        validate: (input) => (input.trim() ? true : 'Network name is required.'),
+      },
+      {
+        type: 'input',
+        name: 'id',
+        message: 'Enter Chain Identifier / Shorthand (e.g. "base", "polygon", "anvil"):',
+        validate: (input) => (input.trim() ? true : 'Chain ID shorthand is required.'),
+      },
+      {
+        type: 'input',
+        name: 'rpcUrl',
+        message: 'Enter RPC Endpoint URL (e.g. "https://sepolia.base.org" or "http://127.0.0.1:8545"):',
+        validate: (input) =>
+          input.startsWith('http://') || input.startsWith('https://') ? true : 'Must be valid HTTP/HTTPS URL.',
+      },
+      {
+        type: 'input',
+        name: 'chainId',
+        message: 'Enter EVM Chain ID (e.g. 84532 for Base Sepolia, 80002 for Polygon Amoy, 31337 for Anvil):',
+        validate: (input) => (!isNaN(parseInt(input, 10)) ? true : 'Must be a valid integer.'),
+      },
+      {
+        type: 'input',
+        name: 'symbol',
+        message: 'Enter Native Currency Symbol (e.g. "ETH", "POL", "BNB", "AVAX"):',
+        default: 'ETH',
+      },
+      {
+        type: 'input',
+        name: 'explorerTxUrl',
+        message: 'Enter Explorer Tx URL format (optional, e.g. "https://sepolia.basescan.org/tx/"):',
+        default: '',
+      },
+    ]);
+
+    addCustomChain({
+      id: answers.id.toLowerCase().trim(),
+      name: answers.name.trim(),
+      networkMode: mode,
+      networkName: answers.name.trim(),
+      symbol: answers.symbol.trim(),
+      decimals: 18,
+      rpcUrl: answers.rpcUrl.trim(),
+      chainId: parseInt(answers.chainId, 10),
+      explorerTxUrl: answers.explorerTxUrl.trim(),
+      explorerAddressUrl: '',
+    });
+
+    console.log(chalk.green(`\n✅ Custom EVM Chain '${chalk.bold(answers.name)}' added successfully to ${mode.toUpperCase()}!`));
+    console.log(chalk.gray(`▶ You can now run \`mcw balance ${answers.id}\` or check all balances with \`mcw balance\`.\n`));
+  } else if (choice === 'remove_custom_chain') {
+    const customChains = Object.values(loadCustomChains());
+    if (customChains.length === 0) {
+      console.log(chalk.yellow('\nℹ️  No custom chains currently configured.\n'));
+      return;
+    }
+    const { idToDelete } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'idToDelete',
+        message: 'Select custom chain to remove:',
+        choices: customChains.map((c) => ({
+          name: `${c.name} (${c.id}) [${c.networkMode.toUpperCase()}]`,
+          value: c.id,
+        })),
+      },
+    ]);
+    removeCustomChain(idToDelete);
+    console.log(chalk.green(`\n✅ Custom chain '${idToDelete}' removed.\n`));
   } else if (choice === 'list_configs') {
     renderConfigTable();
   } else if (choice === 'reset_defaults') {
-    // Overwrite custom networks file
     const fs = await import('fs');
     const path = await import('path');
     const os = await import('os');
-    const file = path.join(os.homedir(), '.mcw', 'custom_networks.json');
-    if (fs.existsSync(file)) {
-      fs.unlinkSync(file);
-    }
+    const file1 = path.join(os.homedir(), '.mcw', 'custom_networks.json');
+    const file2 = path.join(os.homedir(), '.mcw', 'custom_chains.json');
+    if (fs.existsSync(file1)) fs.unlinkSync(file1);
+    if (fs.existsSync(file2)) fs.unlinkSync(file2);
     console.log(chalk.green('\n✅ All network configurations reset to factory defaults.\n'));
   }
 }
 
 function renderConfigTable(): void {
   const mode = getNetworkMode();
-  const chains: SupportedChain[] = ['btc', 'eth', 'sol', 'trx'];
+  const chains = getAllChains(mode);
 
   const table = new Table({
     head: [

@@ -12,8 +12,8 @@ import { getChainConfig, NetworkMode } from '../config/chains.js';
 export class EthereumAdapter extends BaseChainAdapter {
   private provider: ethers.JsonRpcProvider;
 
-  constructor(mode?: NetworkMode) {
-    const config = getChainConfig('eth', mode);
+  constructor(mode?: NetworkMode, chain: string = 'eth') {
+    const config = getChainConfig(chain, mode);
     super(config);
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl, config.chainId);
   }
@@ -23,7 +23,7 @@ export class EthereumAdapter extends BaseChainAdapter {
     const balanceEth = ethers.formatEther(balanceWei);
 
     return {
-      chain: 'eth',
+      chain: this.config.id,
       chainName: this.config.name,
       address,
       balanceFormatted: parseFloat(balanceEth).toFixed(6),

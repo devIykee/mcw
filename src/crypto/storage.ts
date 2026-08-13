@@ -82,7 +82,7 @@ export function unlockVault(password: string): string {
   return decryptData(vaultFile.vault, password);
 }
 
-export function getWalletAddress(chain: SupportedChain, mode?: NetworkMode): string {
+export function getWalletAddress(chain: string, mode?: NetworkMode): string {
   const vault = loadVaultFile();
   const activeMode = mode || getNetworkMode();
 
@@ -93,9 +93,14 @@ export function getWalletAddress(chain: SupportedChain, mode?: NetworkMode): str
     return vault.metadata.btcAddress;
   }
 
-  return chain === 'eth'
-    ? vault.metadata.ethAddress
-    : chain === 'sol'
-    ? vault.metadata.solAddress
-    : vault.metadata.trxAddress;
+  if (chain === 'sol') {
+    return vault.metadata.solAddress;
+  }
+
+  if (chain === 'trx') {
+    return vault.metadata.trxAddress;
+  }
+
+  // Default for eth and all custom EVM chains
+  return vault.metadata.ethAddress;
 }

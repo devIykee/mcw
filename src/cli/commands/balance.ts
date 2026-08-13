@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { walletExists, getWalletAddress } from '../../crypto/storage.js';
 import { getChainAdapter } from '../../adapters/index.js';
-import { SupportedChain, getNetworkMode } from '../../config/chains.js';
+import { getNetworkMode, getAllChains } from '../../config/chains.js';
 import { renderBalanceTable, createSpinner } from '../ui.js';
 
 export async function balanceCommand(chainArg?: string): Promise<void> {
@@ -11,13 +11,13 @@ export async function balanceCommand(chainArg?: string): Promise<void> {
   }
 
   const mode = getNetworkMode();
-  const validChains: SupportedChain[] = ['btc', 'eth', 'sol', 'trx'];
+  const validChains = getAllChains(mode);
 
-  let chainsToFetch: SupportedChain[] = validChains;
+  let chainsToFetch: string[] = validChains;
   if (chainArg) {
-    const normalized = chainArg.toLowerCase() as SupportedChain;
+    const normalized = chainArg.toLowerCase();
     if (!validChains.includes(normalized)) {
-      console.log(chalk.red(`\n❌ Unknown chain '${chainArg}'. Supported: btc, eth, sol, trx\n`));
+      console.log(chalk.red(`\n❌ Unknown chain '${chainArg}'. Available in ${mode}: ${validChains.join(', ')}\n`));
       return;
     }
     chainsToFetch = [normalized];

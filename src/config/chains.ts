@@ -3,10 +3,10 @@ import path from 'path';
 import os from 'os';
 
 export type NetworkMode = 'testnet' | 'mainnet';
-export type SupportedChain = 'btc' | 'eth' | 'sol' | 'trx';
+export type SupportedChain = 'btc' | 'eth' | 'sol' | 'trx' | string;
 
 export interface ChainConfig {
-  id: SupportedChain;
+  id: string;
   name: string;
   networkMode: NetworkMode;
   networkName: string;
@@ -21,9 +21,24 @@ export interface ChainConfig {
   faucetUrl?: string;
   chainId?: number; // For EVM
   isCustom?: boolean;
+  type?: 'evm' | 'btc' | 'sol' | 'trx';
 }
 
-export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, ChainConfig>> = {
+export interface CustomChainConfig {
+  id: string;
+  name: string;
+  networkMode: NetworkMode;
+  networkName: string;
+  symbol: string;
+  decimals: number;
+  rpcUrl: string;
+  chainId: number;
+  explorerTxUrl: string;
+  explorerAddressUrl: string;
+  faucetUrl?: string;
+}
+
+export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<string, ChainConfig>> = {
   testnet: {
     btc: {
       id: 'btc',
@@ -34,6 +49,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 8,
       derivationPath: "m/84'/1'/0'/0/0",
       coinType: 1,
+      type: 'btc',
       rpcUrl: 'https://blockstream.info/testnet/api',
       fallbackRpcs: ['https://mempool.space/testnet/api'],
       explorerTxUrl: 'https://mempool.space/testnet/tx/',
@@ -49,6 +65,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 18,
       derivationPath: "m/44'/60'/0'/0/0",
       coinType: 60,
+      type: 'evm',
       chainId: 11155111,
       rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
       fallbackRpcs: ['https://rpc.sepolia.org', 'https://sepolia.gateway.tenderly.co'],
@@ -65,6 +82,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 9,
       derivationPath: "m/44'/501'/0'/0'",
       coinType: 501,
+      type: 'sol',
       rpcUrl: 'https://api.devnet.solana.com',
       fallbackRpcs: ['https://api.devnet.solana.com'],
       explorerTxUrl: 'https://explorer.solana.com/tx/?cluster=devnet',
@@ -80,6 +98,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 6,
       derivationPath: "m/44'/195'/0'/0/0",
       coinType: 195,
+      type: 'trx',
       rpcUrl: 'https://nile.trongrid.io',
       fallbackRpcs: [
         'https://api.shasta.trongrid.io',
@@ -100,6 +119,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 8,
       derivationPath: "m/84'/0'/0'/0/0",
       coinType: 0,
+      type: 'btc',
       rpcUrl: 'https://mempool.space/api',
       fallbackRpcs: ['https://blockstream.info/api'],
       explorerTxUrl: 'https://mempool.space/tx/',
@@ -114,6 +134,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 18,
       derivationPath: "m/44'/60'/0'/0/0",
       coinType: 60,
+      type: 'evm',
       chainId: 1,
       rpcUrl: 'https://ethereum-rpc.publicnode.com',
       fallbackRpcs: ['https://cloudflare-eth.com', 'https://eth.llamarpc.com'],
@@ -129,6 +150,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 9,
       derivationPath: "m/44'/501'/0'/0'",
       coinType: 501,
+      type: 'sol',
       rpcUrl: 'https://api.mainnet-beta.solana.com',
       fallbackRpcs: ['https://solana-mainnet.rpc.extrnode.com'],
       explorerTxUrl: 'https://explorer.solana.com/tx/',
@@ -143,6 +165,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       decimals: 6,
       derivationPath: "m/44'/195'/0'/0/0",
       coinType: 195,
+      type: 'trx',
       rpcUrl: 'https://api.trongrid.io',
       fallbackRpcs: ['https://api.tronstack.io'],
       explorerTxUrl: 'https://tronscan.org/#/transaction/',
@@ -172,6 +195,7 @@ export const TRON_TESTNET_FLAVORS = {
 const CONFIG_DIR = path.join(os.homedir(), '.mcw');
 const NETWORK_CONFIG_FILE = path.join(CONFIG_DIR, 'network.json');
 const CUSTOM_NETWORKS_FILE = path.join(CONFIG_DIR, 'custom_networks.json');
+const CUSTOM_CHAINS_FILE = path.join(CONFIG_DIR, 'custom_chains.json');
 
 export function ensureConfigDirectory(): void {
   if (!fs.existsSync(CONFIG_DIR)) {
@@ -199,7 +223,7 @@ export function setNetworkMode(mode: NetworkMode): void {
 }
 
 /**
- * Custom Network Management
+ * Custom Network Overrides for Built-in Chains
  */
 export function loadCustomNetworks(): Record<string, Partial<ChainConfig>> {
   try {
@@ -211,7 +235,7 @@ export function loadCustomNetworks(): Record<string, Partial<ChainConfig>> {
 }
 
 export function saveCustomNetwork(
-  chain: SupportedChain,
+  chain: string,
   mode: NetworkMode,
   customConfig: Partial<ChainConfig>
 ): void {
@@ -238,23 +262,94 @@ export function setTronTestnetFlavor(flavor: 'nile' | 'shasta'): void {
 }
 
 /**
- * Retrieves the effective chain config (default merged with custom overrides)
+ * First-Class Custom Chains (Arbitrary EVMs / L2s / Local Nodes)
  */
-export function getChainConfig(chain: SupportedChain, mode?: NetworkMode): ChainConfig {
-  const activeMode = mode || getNetworkMode();
-  const baseConfig = { ...DUAL_CHAIN_CONFIGS[activeMode][chain] };
-  const customOverrides = loadCustomNetworks();
-  const key = `${activeMode}:${chain}`;
+export function loadCustomChains(): Record<string, CustomChainConfig> {
+  try {
+    if (fs.existsSync(CUSTOM_CHAINS_FILE)) {
+      return JSON.parse(fs.readFileSync(CUSTOM_CHAINS_FILE, 'utf8'));
+    }
+  } catch {}
+  return {};
+}
 
-  if (customOverrides[key]) {
+export function addCustomChain(customChain: CustomChainConfig): void {
+  ensureConfigDirectory();
+  const chains = loadCustomChains();
+  chains[customChain.id.toLowerCase()] = customChain;
+  fs.writeFileSync(CUSTOM_CHAINS_FILE, JSON.stringify(chains, null, 2), { mode: 0o600 });
+}
+
+export function removeCustomChain(id: string): boolean {
+  ensureConfigDirectory();
+  const chains = loadCustomChains();
+  const key = id.toLowerCase();
+  if (chains[key]) {
+    delete chains[key];
+    fs.writeFileSync(CUSTOM_CHAINS_FILE, JSON.stringify(chains, null, 2), { mode: 0o600 });
+    return true;
+  }
+  return false;
+}
+
+export function getAllChains(mode?: NetworkMode): string[] {
+  const activeMode = mode || getNetworkMode();
+  const baseChains = Object.keys(DUAL_CHAIN_CONFIGS[activeMode]);
+  const customChains = Object.values(loadCustomChains())
+    .filter((c) => c.networkMode === activeMode)
+    .map((c) => c.id);
+
+  return [...baseChains, ...customChains];
+}
+
+/**
+ * Retrieves effective chain config for built-in or custom chain
+ */
+export function getChainConfig(chain: string, mode?: NetworkMode): ChainConfig {
+  const activeMode = mode || getNetworkMode();
+  const lowerChain = chain.toLowerCase();
+
+  // Check built-in chains first
+  if (DUAL_CHAIN_CONFIGS[activeMode] && DUAL_CHAIN_CONFIGS[activeMode][lowerChain]) {
+    const baseConfig = { ...DUAL_CHAIN_CONFIGS[activeMode][lowerChain] };
+    const customOverrides = loadCustomNetworks();
+    const key = `${activeMode}:${lowerChain}`;
+
+    if (customOverrides[key]) {
+      return {
+        ...baseConfig,
+        ...customOverrides[key],
+        isCustom: true,
+      };
+    }
+    return baseConfig;
+  }
+
+  // Check custom user-added chains (EVM L2s, local nodes, etc.)
+  const customChains = loadCustomChains();
+  if (customChains[lowerChain]) {
+    const c = customChains[lowerChain];
     return {
-      ...baseConfig,
-      ...customOverrides[key],
+      id: c.id,
+      name: c.name,
+      networkMode: c.networkMode,
+      networkName: c.networkName,
+      symbol: c.symbol,
+      decimals: c.decimals || 18,
+      derivationPath: "m/44'/60'/0'/0/0",
+      coinType: 60,
+      type: 'evm',
+      chainId: c.chainId,
+      rpcUrl: c.rpcUrl,
+      fallbackRpcs: [],
+      explorerTxUrl: c.explorerTxUrl || '',
+      explorerAddressUrl: c.explorerAddressUrl || '',
+      faucetUrl: c.faucetUrl,
       isCustom: true,
     };
   }
 
-  return baseConfig;
+  throw new Error(`Chain '${chain}' is not configured for network mode '${activeMode}'.`);
 }
 
 export const CHAIN_CONFIGS = DUAL_CHAIN_CONFIGS.testnet;

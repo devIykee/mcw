@@ -104,7 +104,14 @@ class ApprovalGateManager {
 
     // Derive private key for target chain
     const keys = deriveAllKeys(mnemonic);
-    const privateKey = keys[pending.chain].privateKey;
+    const privateKey =
+      pending.chain === 'btc'
+        ? keys.btc.privateKey
+        : pending.chain === 'sol'
+        ? keys.sol.privateKey
+        : pending.chain === 'trx'
+        ? keys.trx.privateKey
+        : keys.eth.privateKey;
 
     const adapter = getChainAdapter(pending.chain);
     const result = await adapter.signAndSendTransaction(privateKey, pending.builtTx);
