@@ -20,6 +20,7 @@ export interface ChainConfig {
   explorerAddressUrl: string;
   faucetUrl?: string;
   chainId?: number; // For EVM
+  isCustom?: boolean;
 }
 
 export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, ChainConfig>> = {
@@ -31,7 +32,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       networkName: 'Bitcoin Testnet3',
       symbol: 'tBTC',
       decimals: 8,
-      derivationPath: "m/84'/1'/0'/0/0", // BIP-84 Testnet coin_type 1'
+      derivationPath: "m/84'/1'/0'/0/0",
       coinType: 1,
       rpcUrl: 'https://blockstream.info/testnet/api',
       fallbackRpcs: ['https://mempool.space/testnet/api'],
@@ -72,7 +73,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
     },
     trx: {
       id: 'trx',
-      name: 'Tron (Nile Testnet)',
+      name: 'Tron (Nile / Shasta Testnet)',
       networkMode: 'testnet',
       networkName: 'Tron Nile Testnet',
       symbol: 'TRX',
@@ -80,7 +81,10 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       derivationPath: "m/44'/195'/0'/0/0",
       coinType: 195,
       rpcUrl: 'https://nile.trongrid.io',
-      fallbackRpcs: ['https://api.shasta.trongrid.io'],
+      fallbackRpcs: [
+        'https://api.shasta.trongrid.io',
+        'https://nile.trongrid.io'
+      ],
       explorerTxUrl: 'https://nile.tronscan.org/#/transaction/',
       explorerAddressUrl: 'https://nile.tronscan.org/#/address/',
       faucetUrl: 'https://nileex.io/join/getJoinPage',
@@ -94,7 +98,7 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
       networkName: 'Bitcoin Mainnet',
       symbol: 'BTC',
       decimals: 8,
-      derivationPath: "m/84'/0'/0'/0/0", // BIP-84 Mainnet coin_type 0' (bc1q...)
+      derivationPath: "m/84'/0'/0'/0/0",
       coinType: 0,
       rpcUrl: 'https://mempool.space/api',
       fallbackRpcs: ['https://blockstream.info/api'],
@@ -147,12 +151,34 @@ export const DUAL_CHAIN_CONFIGS: Record<NetworkMode, Record<SupportedChain, Chai
   },
 };
 
-const NETWORK_CONFIG_FILE = path.join(os.homedir(), '.mc-twaf', 'network.json');
+// Available Built-in Tron Testnet Flavors
+export const TRON_TESTNET_FLAVORS = {
+  nile: {
+    name: 'Tron Nile Testnet',
+    rpcUrl: 'https://nile.trongrid.io',
+    explorerTxUrl: 'https://nile.tronscan.org/#/transaction/',
+    explorerAddressUrl: 'https://nile.tronscan.org/#/address/',
+    faucetUrl: 'https://nileex.io/join/getJoinPage',
+  },
+  shasta: {
+    name: 'Tron Shasta Testnet',
+    rpcUrl: 'https://api.shasta.trongrid.io',
+    explorerTxUrl: 'https://shasta.tronscan.org/#/transaction/',
+    explorerAddressUrl: 'https://shasta.tronscan.org/#/address/',
+    faucetUrl: 'https://www.trongrid.io/shasta',
+  },
+};
 
-/**
- * Gets the current active network mode ('testnet' or 'mainnet').
- * Defaults to 'testnet'.
- */
+const CONFIG_DIR = path.join(os.homedir(), '.mcw');
+const NETWORK_CONFIG_FILE = path.join(CONFIG_DIR, 'network.json');
+const CUSTOM_NETWORKS_FILE = path.join(CONFIG_DIR, 'custom_networks.json');
+
+export function ensureConfigDirectory(): void {
+  if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  }
+}
+
 export function getNetworkMode(): NetworkMode {
   try {
     if (fs.existsSync(NETWORK_CONFIG_FILE)) {
@@ -165,26 +191,70 @@ export function getNetworkMode(): NetworkMode {
   return 'testnet';
 }
 
-/**
- * Switches the active network mode.
- */
 export function setNetworkMode(mode: NetworkMode): void {
-  const dir = path.dirname(NETWORK_CONFIG_FILE);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  }
+  ensureConfigDirectory();
   fs.writeFileSync(NETWORK_CONFIG_FILE, JSON.stringify({ mode, updatedAt: new Date().toISOString() }, null, 2), {
     mode: 0o600,
   });
 }
 
 /**
- * Get chain configs for the currently active network mode
+ * Custom Network Management
+ */
+export function loadCustomNetworks(): Record<string, Partial<ChainConfig>> {
+  try {
+    if (fs.existsSync(CUSTOM_NETWORKS_FILE)) {
+      return JSON.parse(fs.readFileSync(CUSTOM_NETWORKS_FILE, 'utf8'));
+    }
+  } catch {}
+  return {};
+}
+
+export function saveCustomNetwork(
+  chain: SupportedChain,
+  mode: NetworkMode,
+  customConfig: Partial<ChainConfig>
+): void {
+  ensureConfigDirectory();
+  const current = loadCustomNetworks();
+  const key = `${mode}:${chain}`;
+  current[key] = {
+    ...customConfig,
+    isCustom: true,
+  };
+
+  fs.writeFileSync(CUSTOM_NETWORKS_FILE, JSON.stringify(current, null, 2), { mode: 0o600 });
+}
+
+export function setTronTestnetFlavor(flavor: 'nile' | 'shasta'): void {
+  const chosen = TRON_TESTNET_FLAVORS[flavor];
+  saveCustomNetwork('trx', 'testnet', {
+    networkName: chosen.name,
+    rpcUrl: chosen.rpcUrl,
+    explorerTxUrl: chosen.explorerTxUrl,
+    explorerAddressUrl: chosen.explorerAddressUrl,
+    faucetUrl: chosen.faucetUrl,
+  });
+}
+
+/**
+ * Retrieves the effective chain config (default merged with custom overrides)
  */
 export function getChainConfig(chain: SupportedChain, mode?: NetworkMode): ChainConfig {
   const activeMode = mode || getNetworkMode();
-  return DUAL_CHAIN_CONFIGS[activeMode][chain];
+  const baseConfig = { ...DUAL_CHAIN_CONFIGS[activeMode][chain] };
+  const customOverrides = loadCustomNetworks();
+  const key = `${activeMode}:${chain}`;
+
+  if (customOverrides[key]) {
+    return {
+      ...baseConfig,
+      ...customOverrides[key],
+      isCustom: true,
+    };
+  }
+
+  return baseConfig;
 }
 
-// Backward compatibility helper
 export const CHAIN_CONFIGS = DUAL_CHAIN_CONFIGS.testnet;

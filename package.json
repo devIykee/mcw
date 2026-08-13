@@ -4,6 +4,7 @@
   "description": "Multi-Chain Testnet Wallet & Agentic Framework for Humans and AI Agents (MCP)",
   "main": "dist/index.js",
   "bin": {
+    "mcw": "dist/index.js",
     "mc-twaf": "dist/index.js",
     "mc-wallet": "dist/index.js",
     "wallet": "dist/index.js"

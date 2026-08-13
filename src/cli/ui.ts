@@ -8,16 +8,16 @@ export function printBanner(): void {
 
   console.log(
     chalk.cyan.bold(`
-  ███╗   ███╗ ██████╗       ████████╗██╗    ██╗ █████╗ ███████╗
-  ████╗ ████║██╔════╝       ╚══██╔══╝██║    ██║██╔══██╗██╔════╝
-  ██╔████╔██║██║               ██║   ██║ █╗ ██║███████║█████╗  
-  ██║╚██╔╝██║██║               ██║   ██║███╗██║██╔══██║██╔══╝  
-  ██║ ╚═╝ ██║╚██████╗          ██║   ╚███╔███╔╝██║  ██║██║     
-  ╚═╝     ╚═╝ ╚═════╝          ╚═╝    ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝     
+  ███╗   ███╗ ██████╗██╗    ██╗
+  ████╗ ████║██╔════╝██║    ██║
+  ██╔████╔██║██║     ██║ █╗ ██║
+  ██║╚██╔╝██║██║     ██║███╗██║
+  ██║ ╚═╝ ██║╚██████╗╚███╔███╔╝
+  ╚═╝     ╚═╝ ╚═════╝ ╚══╝╚══╝ 
   `)
   );
   console.log(
-    chalk.bold.hex('#F59E0B')('  ▶ Multi-Chain Testnet & Mainnet Wallet & Agentic Framework')
+    chalk.bold.hex('#F59E0B')('  ▶ Multi-Chain CLI Wallet (MCW) & Agentic Framework')
   );
   console.log(
     chalk.gray('  ▶ Built for Humans (Rich CLI) & AI Agents (Standard MCP Server)\n')
@@ -31,7 +31,7 @@ export function printBanner(): void {
   } else {
     console.log(
       chalk.bgGreen.black.bold(' 🟢 TESTNET MODE ') +
-        chalk.gray(' Operating on risk-free test networks (Sepolia, Devnet, Nile, Testnet3).\n')
+        chalk.gray(' Operating on risk-free test networks (Sepolia, Devnet, Nile/Shasta, Testnet3).\n')
     );
   }
 }

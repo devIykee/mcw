@@ -5,14 +5,15 @@ import { balanceCommand } from './commands/balance.js';
 import { sendCommand } from './commands/send.js';
 import { faucetCommand } from './commands/faucet.js';
 import { networkCommand } from './commands/network.js';
+import { configCommand } from './commands/config.js';
 import { mcpDaemonCommand } from './commands/mcpDaemon.js';
 
 export function setupCli(): Command {
   const program = new Command();
 
   program
-    .name('mc-twaf')
-    .description('Multi-Chain Testnet & Mainnet Wallet & Agentic Framework for Humans & AI Agents')
+    .name('mcw')
+    .description('Multi-Chain CLI Wallet (MCW) & Agentic Framework for Humans & AI Agents')
     .version('1.1.0');
 
   program
@@ -39,6 +40,17 @@ export function setupCli(): Command {
     .action(async (mode) => {
       printBanner();
       await networkCommand(mode);
+    });
+
+  program
+    .command('config')
+    .description('Configure custom networks, RPC endpoints, and select Tron flavor (Nile vs Shasta)')
+    .argument('[action]', 'Action (tron | set-rpc | list)')
+    .argument('[chain]', 'Chain or Tron flavor (nile | shasta | eth | sol | btc | trx)')
+    .argument('[value]', 'RPC URL value')
+    .action(async (action, chain, value) => {
+      printBanner();
+      await configCommand(action, chain, value);
     });
 
   program
