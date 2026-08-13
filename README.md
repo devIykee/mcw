@@ -1,4 +1,4 @@
-# 🚀 Multi-Chain CLI Wallet (MCW) & Agentic Framework
+# Multi-Chain CLI Wallet (MCW) & Agentic Framework
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
@@ -22,7 +22,7 @@ A robust, enterprise-grade multi-chain wallet and AI agent framework serving two
 
 ---
 
-## ⚡ Quick Start (CLI: `mcw`)
+## Quick Start (CLI: `mcw`)
 
 You can run `mcw` globally on your machine (via `npm link` or `npm i -g @deviykee/mcw`) or with **zero installation** via `npx @deviykee/mcw`.
 
@@ -126,7 +126,7 @@ mcw send eth 0.01 <RECIPIENT_ETH_ADDRESS>
 
 ---
 
-## 🤖 AI Agent MCP Server Integration
+## AI Agent MCP Server Integration
 
 MCW implements the official `@modelcontextprotocol/sdk` JSON-RPC specification over `stdio`.
 
@@ -155,14 +155,14 @@ Add the following to your `claude_desktop_config.json` (or Cursor/Gemini MCP con
 5. **`get_transaction_status`**: Queries transaction status and confirmation count.
 6. **`request_faucet`**: Triggers automated airdrop or returns faucet claim instructions (testnet mode).
 
-#### 🔐 Action Tools (Safety Protected)
+#### Action Tools (Safety Protected)
 7. **`build_transaction`**: Formulates raw transaction, calculates network gas/fees, and queues transaction in the approval gate with status `PENDING_HUMAN_APPROVAL`. Returns a `pendingTxId`.
 8. **`sign_and_send_transaction`**: Unlocks vault using human password (or session auth) and broadcasts to the network.
 9. **`list_pending_transactions`**: Lists all pending transactions waiting for human approval.
 
 ---
 
-## 🧠 Agent Skills (Claude Code, Grok, Cursor, Gemini CLI)
+## Agent Skills (Claude Code, Grok, Cursor, Gemini CLI)
 
 MCW includes standardized **Agent Skills** located in [`skills/mcw/`](file:///home/iyke/coding/cli-wallet/skills/mcw):
 
@@ -175,7 +175,7 @@ Copy the `skills/mcw` directory into your project's `.skills/` or reference `ski
 
 ---
 
-## 🔒 Cryptography & Security Model
+## Cryptography & Security Model
 
 - **BIP-39:** Mnemonic seed generation with PBKDF2 HMAC-SHA512.
 - **BIP-84 / BIP-44 / SLIP-0010:** Native SegWit ECDSA (BTC), Keccak256 ECDSA (ETH & TRX), and Ed25519 (SOL).
@@ -185,5 +185,5 @@ Copy the `skills/mcw` directory into your project's `.skills/` or reference `ski
 
 ---
 
-## 📜 License
+## License
 MIT License. Built for multi-chain testnet/mainnet operations and autonomous agent integration.
