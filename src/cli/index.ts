@@ -6,6 +6,7 @@ import { sendCommand } from './commands/send.js';
 import { faucetCommand } from './commands/faucet.js';
 import { networkCommand } from './commands/network.js';
 import { configCommand } from './commands/config.js';
+import { tokenCommand } from './commands/token.js';
 import { mcpDaemonCommand } from './commands/mcpDaemon.js';
 
 export function setupCli(): Command {
@@ -14,7 +15,7 @@ export function setupCli(): Command {
   program
     .name('mcw')
     .description('Multi-Chain CLI Wallet (MCW) & Agentic Framework for Humans & AI Agents')
-    .version('1.1.0');
+    .version('1.0.2');
 
   program
     .command('init')
@@ -43,9 +44,21 @@ export function setupCli(): Command {
     });
 
   program
+    .command('token')
+    .description('Manage and query ERC-20 / SPL tokens (USDC, USDT, LINK, custom contracts)')
+    .argument('[action]', 'Action (balance | add | send | list | remove)')
+    .argument('[token]', 'Token symbol or ID (e.g. usdc-sepolia, link-sepolia)')
+    .argument('[amount]', 'Amount to send')
+    .argument('[to]', 'Recipient address')
+    .action(async (action, token, amount, to) => {
+      printBanner();
+      await tokenCommand(action, token, amount, to);
+    });
+
+  program
     .command('config')
     .description('Configure custom networks, RPC endpoints, and select Tron flavor (Nile vs Shasta)')
-    .argument('[action]', 'Action (tron | set-rpc | list)')
+    .argument('[action]', 'Action (tron | set-rpc | list | add-chain | remove-chain)')
     .argument('[chain]', 'Chain or Tron flavor (nile | shasta | eth | sol | btc | trx)')
     .argument('[value]', 'RPC URL value')
     .action(async (action, chain, value) => {

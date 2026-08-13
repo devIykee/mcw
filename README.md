@@ -84,7 +84,25 @@ mcw config list
 mcw config
 ```
 
-### 5. Request Testnet Faucet / Airdrop
+### 5. Token Management (ERC-20, Sepolia USDC, LINK, SPL)
+Track, query, and transfer custom tokens directly from smart contracts:
+
+```bash
+# List all configured tokens (Built-in Sepolia USDC, LINK, Devnet USDC + Custom)
+mcw token list
+
+# Check token balances
+mcw token balance
+mcw token balance usdc-sepolia
+
+# Add any custom ERC-20 / SPL token contract
+mcw token add
+
+# Send ERC-20 tokens
+mcw token send usdc-sepolia 50 0xRecipientAddress...
+```
+
+### 6. Request Testnet Faucet / Airdrop
 Requests instant testnet tokens (with automated JSON-RPC airdrop on Solana Devnet and direct faucet links for other networks):
 
 ```bash
@@ -94,7 +112,7 @@ mcw faucet trx
 mcw faucet btc
 ```
 
-### 6. Send Coins
+### 7. Send Coins
 Interactively estimates fees, asks for vault decryption password, signs, and broadcasts the transaction:
 
 ```bash

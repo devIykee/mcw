@@ -7,15 +7,16 @@ import {
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
 import { loadVaultFile, walletExists, getWalletAddress } from '../crypto/storage.js';
-import { getChainAdapter } from '../adapters/index.js';
-import { SupportedChain, getChainConfig, getNetworkMode, setNetworkMode, NetworkMode } from '../config/chains.js';
+import { getChainAdapter, EthereumAdapter } from '../adapters/index.js';
+import { SupportedChain, getChainConfig, getNetworkMode, setNetworkMode, NetworkMode, getAllChains } from '../config/chains.js';
+import { getAllTokens, findToken, saveCustomToken, TokenConfig } from '../config/tokens.js';
 import { approvalGate } from './approvalGate.js';
 
 export function createMcpServer(): Server {
   const server = new Server(
     {
       name: 'mcw-mcp-server',
-      version: '1.0.0',
+      version: '1.0.2',
     },
     {
       capabilities: {
@@ -71,10 +72,58 @@ export function createMcpServer(): Server {
             properties: {
               chain: {
                 type: 'string',
-                enum: ['btc', 'eth', 'sol', 'trx'],
-                description: 'The target chain. If omitted, returns balances for all chains.',
+                description: 'The target chain (e.g. btc, eth, sol, trx, or custom chain). If omitted, returns balances for all chains.',
               },
             },
+          },
+        },
+        {
+          name: 'get_token_balance',
+          description:
+            'Query balance of an ERC-20 / SPL token (e.g. Sepolia USDC, LINK) by token symbol or contract address.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              token: {
+                type: 'string',
+                description: 'Token symbol (e.g. "USDC", "LINK") or contract address',
+              },
+              chain: {
+                type: 'string',
+                description: 'Blockchain name (default: "eth")',
+              },
+            },
+            required: ['token'],
+          },
+        },
+        {
+          name: 'add_token',
+          description: 'Configure and track a new ERC-20 or SPL token contract.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chain: {
+                type: 'string',
+                description: 'Target blockchain (e.g. "eth", "base-sepolia", "polygon")',
+              },
+              contractAddress: {
+                type: 'string',
+                description: 'Smart contract address for ERC-20 or Mint address for SPL',
+              },
+              symbol: {
+                type: 'string',
+                description: 'Token symbol (e.g. "USDC", "DAI")',
+              },
+              name: {
+                type: 'string',
+                description: 'Token full name (e.g. "USD Coin")',
+              },
+              decimals: {
+                type: 'number',
+                description: 'Token decimals (default: 18, 6 for USDC)',
+              },
+            },
+            required: ['chain', 'contractAddress', 'symbol'],
           },
         },
         {
@@ -85,7 +134,6 @@ export function createMcpServer(): Server {
             properties: {
               chain: {
                 type: 'string',
-                enum: ['btc', 'eth', 'sol', 'trx'],
                 description: 'The target blockchain',
               },
               txHash: {
@@ -104,7 +152,6 @@ export function createMcpServer(): Server {
             properties: {
               chain: {
                 type: 'string',
-                enum: ['btc', 'eth', 'sol', 'trx'],
                 description: 'The target blockchain (btc, eth, sol, trx)',
               },
             },
@@ -120,7 +167,6 @@ export function createMcpServer(): Server {
             properties: {
               chain: {
                 type: 'string',
-                enum: ['btc', 'eth', 'sol', 'trx'],
                 description: 'Target chain',
               },
               to: {
@@ -152,7 +198,6 @@ export function createMcpServer(): Server {
               },
               chain: {
                 type: 'string',
-                enum: ['btc', 'eth', 'sol', 'trx'],
                 description: 'Chain if executing direct send',
               },
               to: {
@@ -266,8 +311,8 @@ export function createMcpServer(): Server {
         }
 
         case 'get_balance': {
-          const chain = (args?.chain as SupportedChain) || undefined;
-          const chainsToQuery: SupportedChain[] = chain ? [chain] : ['btc', 'eth', 'sol', 'trx'];
+          const chain = (args?.chain as string) || undefined;
+          const chainsToQuery = chain ? [chain] : getAllChains(mode);
           const results = [];
 
           for (const c of chainsToQuery) {
@@ -287,8 +332,71 @@ export function createMcpServer(): Server {
           };
         }
 
+        case 'get_token_balance': {
+          const tokenSearch = args?.token as string;
+          const chain = (args?.chain as string) || 'eth';
+          if (!tokenSearch) {
+            throw new McpError(ErrorCode.InvalidParams, 'token parameter is required.');
+          }
+
+          const token = findToken(tokenSearch, mode, chain);
+          const tokenAddress = token ? token.contractAddress : tokenSearch;
+          const decimals = token ? token.decimals : 18;
+
+          const adapter = getChainAdapter(chain, mode);
+          const walletAddr = getWalletAddress(chain, mode);
+
+          if (!(adapter instanceof EthereumAdapter)) {
+            throw new McpError(ErrorCode.InvalidParams, 'Token querying is currently supported on EVM chains.');
+          }
+
+          const bal = await adapter.getERC20Balance(tokenAddress, walletAddr, decimals);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(bal, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'add_token': {
+          const chain = args?.chain as string;
+          const contractAddress = args?.contractAddress as string;
+          const symbol = (args?.symbol as string).toUpperCase();
+          const name = (args?.name as string) || `${symbol} Token`;
+          const decimals = typeof args?.decimals === 'number' ? args.decimals : 18;
+
+          if (!chain || !contractAddress || !symbol) {
+            throw new McpError(ErrorCode.InvalidParams, 'chain, contractAddress, and symbol are required.');
+          }
+
+          const id = `${symbol.toLowerCase()}-${chain.toLowerCase()}`;
+          saveCustomToken({
+            id,
+            symbol,
+            name,
+            chain,
+            networkMode: mode,
+            contractAddress,
+            decimals,
+            standard: chain === 'sol' ? 'spl' : chain === 'trx' ? 'trc20' : 'erc20',
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ success: true, token: { id, symbol, name, chain, contractAddress, decimals } }, null, 2),
+              },
+            ],
+          };
+        }
+
         case 'get_transaction_status': {
-          const chain = args?.chain as SupportedChain;
+          const chain = args?.chain as string;
           const txHash = args?.txHash as string;
           if (!chain || !txHash) {
             throw new McpError(ErrorCode.InvalidParams, 'chain and txHash are required.');
@@ -308,7 +416,7 @@ export function createMcpServer(): Server {
         }
 
         case 'request_faucet': {
-          const chain = args?.chain as SupportedChain;
+          const chain = args?.chain as string;
           if (!chain) {
             throw new McpError(ErrorCode.InvalidParams, 'chain parameter is required.');
           }
@@ -340,7 +448,7 @@ export function createMcpServer(): Server {
         }
 
         case 'build_transaction': {
-          const chain = args?.chain as SupportedChain;
+          const chain = args?.chain as string;
           const to = args?.to as string;
           const amount = args?.amount as string;
           const data = args?.data as string | undefined;
@@ -354,7 +462,7 @@ export function createMcpServer(): Server {
           const builtTx = await adapter.buildTransaction(fromAddress, { to, amount, data });
 
           // Register in Approval Gate
-          const pending = approvalGate.registerPendingTx(chain, fromAddress, builtTx);
+          const pending = approvalGate.registerPendingTx(chain as SupportedChain, fromAddress, builtTx);
 
           return {
             content: [
@@ -390,14 +498,14 @@ export function createMcpServer(): Server {
           const password = args?.approvalPassword as string | undefined;
 
           if (!pendingTxId && args?.chain && args?.to && args?.amount) {
-            const chain = args.chain as SupportedChain;
+            const chain = args.chain as string;
             const fromAddress = getWalletAddress(chain, mode);
             const adapter = getChainAdapter(chain, mode);
             const builtTx = await adapter.buildTransaction(fromAddress, {
               to: args.to as string,
               amount: args.amount as string,
             });
-            const pending = approvalGate.registerPendingTx(chain, fromAddress, builtTx);
+            const pending = approvalGate.registerPendingTx(chain as SupportedChain, fromAddress, builtTx);
             pendingTxId = pending.id;
           }
 
@@ -461,5 +569,5 @@ export async function startMcpServer(): Promise<void> {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[MC-TWAF] MCP Server connected via stdio transport. Listening for agent requests...');
+  console.error('[MCW] MCP Server connected via stdio transport. Listening for agent requests...');
 }
