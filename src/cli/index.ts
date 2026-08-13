@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Command } from 'commander';
 import { printBanner } from './ui.js';
 import { initCommand } from './commands/init.js';
@@ -9,13 +11,24 @@ import { configCommand } from './commands/config.js';
 import { tokenCommand } from './commands/token.js';
 import { mcpDaemonCommand } from './commands/mcpDaemon.js';
 
+function getPackageVersion(): string {
+  try {
+    const pkgPath = path.join(__dirname, '../../package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      return pkg.version || '1.0.6';
+    }
+  } catch {}
+  return '1.0.6';
+}
+
 export function setupCli(): Command {
   const program = new Command();
 
   program
     .name('mcw')
     .description('Multi-Chain CLI Wallet (MCW) & Agentic Framework for Humans & AI Agents')
-    .version('1.0.2');
+    .version(getPackageVersion());
 
   program
     .command('init')

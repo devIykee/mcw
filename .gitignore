@@ -21,6 +21,7 @@ build/
 vault.dat
 .mc-twaf/
 .mcw/
+.npmrc
 
 # Logs
 npm-debug.log*
