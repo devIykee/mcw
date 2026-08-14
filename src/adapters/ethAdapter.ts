@@ -88,6 +88,19 @@ export class EthereumAdapter extends BaseChainAdapter {
   }
 
   /**
+   * Fetch on-chain token metadata (Symbol, Name, Decimals)
+   */
+  async getTokenMetadata(tokenContractAddress: string): Promise<{ symbol: string; name: string; decimals: number }> {
+    const contract = new ethers.Contract(tokenContractAddress, ERC20_ABI, this.provider);
+    const [symbol, name, decimals] = await Promise.all([
+      contract.symbol().catch(() => 'TOKEN'),
+      contract.name().catch(() => 'Custom Token'),
+      contract.decimals().then((d: any) => Number(d)).catch(() => 18),
+    ]);
+    return { symbol, name, decimals };
+  }
+
+  /**
    * Build ERC-20 Token Transfer
    */
   async buildERC20Transfer(

@@ -126,6 +126,88 @@ export class TronAdapter extends BaseChainAdapter {
   }
 
   /**
+   * Fetch on-chain TRC-20 metadata (Symbol, Name, Decimals)
+   */
+  async getTokenMetadata(tokenContractAddress: string): Promise<{ symbol: string; name: string; decimals: number }> {
+    let symbol = 'TRC20';
+    let name = 'TRC-20 Token';
+    let decimals = 6;
+
+    // Helper decoder
+    const decodeHex = (hex: string): string => {
+      try {
+        if (!hex) return '';
+        if (hex.length >= 128) {
+          const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['string'], '0x' + hex);
+          if (decoded && decoded[0]) return decoded[0].trim();
+        }
+        const bytes = Buffer.from(hex, 'hex');
+        return bytes.toString('utf8').replace(/\0/g, '').trim();
+      } catch {
+        return '';
+      }
+    };
+
+    // 1. Symbol
+    try {
+      const res = await axios.post(
+        `${this.apiBaseUrl}/wallet/triggerconstantcontract`,
+        {
+          owner_address: '410000000000000000000000000000000000000000',
+          contract_address: tokenContractAddress,
+          function_selector: 'symbol()',
+          parameter: '',
+          visible: true,
+        },
+        { timeout: 8000 }
+      );
+      if (res.data?.constant_result?.[0]) {
+        const decoded = decodeHex(res.data.constant_result[0]);
+        if (decoded) symbol = decoded;
+      }
+    } catch {}
+
+    // 2. Name
+    try {
+      const res = await axios.post(
+        `${this.apiBaseUrl}/wallet/triggerconstantcontract`,
+        {
+          owner_address: '410000000000000000000000000000000000000000',
+          contract_address: tokenContractAddress,
+          function_selector: 'name()',
+          parameter: '',
+          visible: true,
+        },
+        { timeout: 8000 }
+      );
+      if (res.data?.constant_result?.[0]) {
+        const decoded = decodeHex(res.data.constant_result[0]);
+        if (decoded) name = decoded;
+      }
+    } catch {}
+
+    // 3. Decimals
+    try {
+      const res = await axios.post(
+        `${this.apiBaseUrl}/wallet/triggerconstantcontract`,
+        {
+          owner_address: '410000000000000000000000000000000000000000',
+          contract_address: tokenContractAddress,
+          function_selector: 'decimals()',
+          parameter: '',
+          visible: true,
+        },
+        { timeout: 8000 }
+      );
+      if (res.data?.constant_result?.[0]) {
+        decimals = Number(BigInt('0x' + res.data.constant_result[0]));
+      }
+    } catch {}
+
+    return { symbol, name, decimals };
+  }
+
+  /**
    * Build TRC-20 Transfer
    */
   async buildTRC20Transfer(

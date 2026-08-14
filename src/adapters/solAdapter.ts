@@ -101,6 +101,52 @@ export class SolanaAdapter extends BaseChainAdapter {
     }
   }
 
+  /**
+   * Fetch on-chain SPL Token metadata (Decimals and Metaplex Name/Symbol)
+   */
+  async getTokenMetadata(mintAddress: string): Promise<{ symbol: string; name: string; decimals: number }> {
+    let symbol = 'SPL';
+    let name = 'SPL Token';
+    let decimals = 6;
+
+    try {
+      const mintPubkey = new PublicKey(mintAddress);
+      const parsedInfo = await this.connection.getParsedAccountInfo(mintPubkey);
+      if (parsedInfo.value && 'parsed' in parsedInfo.value.data) {
+        const info = (parsedInfo.value.data as any).parsed?.info;
+        if (info && typeof info.decimals === 'number') {
+          decimals = info.decimals;
+        }
+      }
+
+      // Check Metaplex Metadata PDA
+      try {
+        const METAPLEX_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3b5Jjb4Kezp11xNm9');
+        const [metadataPDA] = PublicKey.findProgramAddressSync(
+          [Buffer.from('metadata'), METAPLEX_PROGRAM_ID.toBuffer(), mintPubkey.toBuffer()],
+          METAPLEX_PROGRAM_ID
+        );
+        const metadataAccount = await this.connection.getAccountInfo(metadataPDA);
+        if (metadataAccount && metadataAccount.data) {
+          const buffer = metadataAccount.data;
+          const nameLen = buffer.readUInt32LE(65);
+          if (nameLen > 0 && nameLen < 64) {
+            const rawName = buffer.subarray(69, 69 + nameLen).toString('utf8').replace(/\0/g, '').trim();
+            if (rawName) name = rawName;
+            const symOffset = 69 + nameLen;
+            const symLen = buffer.readUInt32LE(symOffset);
+            if (symLen > 0 && symLen < 20) {
+              const rawSym = buffer.subarray(symOffset + 4, symOffset + 4 + symLen).toString('utf8').replace(/\0/g, '').trim();
+              if (rawSym) symbol = rawSym;
+            }
+          }
+        }
+      } catch {}
+    } catch {}
+
+    return { symbol, name, decimals };
+  }
+
   async buildTransaction(fromAddress: string, payload: TransactionPayload): Promise<BuiltTransaction> {
     const fromPubkey = new PublicKey(fromAddress);
     const toPubkey = new PublicKey(payload.to);

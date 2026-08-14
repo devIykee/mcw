@@ -7,16 +7,17 @@ import {
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
 import { loadVaultFile, walletExists, getWalletAddress } from '../crypto/storage.js';
-import { getChainAdapter, EthereumAdapter } from '../adapters/index.js';
+import { getChainAdapter, EthereumAdapter, TronAdapter, SolanaAdapter } from '../adapters/index.js';
 import { SupportedChain, getChainConfig, getNetworkMode, setNetworkMode, NetworkMode, getAllChains } from '../config/chains.js';
 import { getAllTokens, findToken, saveCustomToken, TokenConfig } from '../config/tokens.js';
+import { detectChainFromAddress } from '../cli/commands/token.js';
 import { approvalGate } from './approvalGate.js';
 
 export function createMcpServer(): Server {
   const server = new Server(
     {
       name: 'mcw-mcp-server',
-      version: '1.0.2',
+      version: '1.0.8',
     },
     {
       capabilities: {
@@ -80,17 +81,17 @@ export function createMcpServer(): Server {
         {
           name: 'get_token_balance',
           description:
-            'Query balance of an ERC-20 / SPL token (e.g. Sepolia USDC, LINK) by token symbol or contract address.',
+            'Query balance of an ERC-20, SPL, or TRC-20 token (e.g. Sepolia USDC, Shasta USDT, Solana Devnet USDC) by token symbol or contract address.',
           inputSchema: {
             type: 'object',
             properties: {
               token: {
                 type: 'string',
-                description: 'Token symbol (e.g. "USDC", "LINK") or contract address',
+                description: 'Token symbol, token ID (e.g. "USDC", "usdt-trx"), or smart contract/mint address',
               },
               chain: {
                 type: 'string',
-                description: 'Blockchain name (default: "eth")',
+                description: 'Optional blockchain name (eth, trx, sol, or custom EVM chain)',
               },
             },
             required: ['token'],
@@ -98,32 +99,33 @@ export function createMcpServer(): Server {
         },
         {
           name: 'add_token',
-          description: 'Configure and track a new ERC-20 or SPL token contract.',
+          description:
+            'Register and track a new smart contract token. Automatically detects chain, symbol, name, and decimals from the blockchain if not provided.',
           inputSchema: {
             type: 'object',
             properties: {
-              chain: {
-                type: 'string',
-                description: 'Target blockchain (e.g. "eth", "base-sepolia", "polygon")',
-              },
               contractAddress: {
                 type: 'string',
-                description: 'Smart contract address for ERC-20 or Mint address for SPL',
+                description: 'Smart contract address (ERC-20/TRC-20) or Mint address (SPL)',
+              },
+              chain: {
+                type: 'string',
+                description: 'Optional blockchain name (auto-detected if omitted)',
               },
               symbol: {
                 type: 'string',
-                description: 'Token symbol (e.g. "USDC", "DAI")',
+                description: 'Optional token symbol override (auto-fetched on-chain if omitted)',
               },
               name: {
                 type: 'string',
-                description: 'Token full name (e.g. "USD Coin")',
+                description: 'Optional token name override (auto-fetched on-chain if omitted)',
               },
               decimals: {
                 type: 'number',
-                description: 'Token decimals (default: 18, 6 for USDC)',
+                description: 'Optional token decimals override (auto-fetched on-chain if omitted)',
               },
             },
-            required: ['chain', 'contractAddress', 'symbol'],
+            required: ['contractAddress'],
           },
         },
         {
@@ -334,62 +336,89 @@ export function createMcpServer(): Server {
 
         case 'get_token_balance': {
           const tokenSearch = args?.token as string;
-          const chain = (args?.chain as string) || 'eth';
+          let chain = args?.chain as string | undefined;
           if (!tokenSearch) {
             throw new McpError(ErrorCode.InvalidParams, 'token parameter is required.');
           }
 
           const token = findToken(tokenSearch, mode, chain);
           const tokenAddress = token ? token.contractAddress : tokenSearch;
+          if (!chain) {
+            chain = token ? token.chain : detectChainFromAddress(tokenAddress).chain;
+          }
           const decimals = token ? token.decimals : 18;
 
           const adapter = getChainAdapter(chain, mode);
           const walletAddr = getWalletAddress(chain, mode);
 
-          if (!(adapter instanceof EthereumAdapter)) {
-            throw new McpError(ErrorCode.InvalidParams, 'Token querying is currently supported on EVM chains.');
+          let balResult;
+          if (adapter instanceof EthereumAdapter) {
+            balResult = await adapter.getERC20Balance(tokenAddress, walletAddr, decimals);
+          } else if (adapter instanceof TronAdapter) {
+            balResult = await adapter.getTRC20Balance(tokenAddress, walletAddr, decimals);
+          } else if (adapter instanceof SolanaAdapter) {
+            balResult = await adapter.getSPLBalance(tokenAddress, walletAddr, decimals);
+          } else {
+            throw new McpError(ErrorCode.InvalidParams, `Token querying is not supported on chain: ${chain}`);
           }
-
-          const bal = await adapter.getERC20Balance(tokenAddress, walletAddr, decimals);
 
           return {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(bal, null, 2),
+                text: JSON.stringify(balResult, null, 2),
               },
             ],
           };
         }
 
         case 'add_token': {
-          const chain = args?.chain as string;
           const contractAddress = args?.contractAddress as string;
-          const symbol = (args?.symbol as string).toUpperCase();
-          const name = (args?.name as string) || `${symbol} Token`;
-          const decimals = typeof args?.decimals === 'number' ? args.decimals : 18;
+          if (!contractAddress) {
+            throw new McpError(ErrorCode.InvalidParams, 'contractAddress is required.');
+          }
 
-          if (!chain || !contractAddress || !symbol) {
-            throw new McpError(ErrorCode.InvalidParams, 'chain, contractAddress, and symbol are required.');
+          const { chain: detectedChain, standard } = detectChainFromAddress(contractAddress, args?.chain as string);
+          const chain = (args?.chain as string) || detectedChain;
+          const adapter = getChainAdapter(chain, mode);
+
+          let symbol = args?.symbol as string;
+          let name = args?.name as string;
+          let decimals = typeof args?.decimals === 'number' ? args.decimals : undefined;
+
+          // Auto-fetch metadata on-chain if omitted!
+          if (!symbol || !name || decimals === undefined) {
+            if (adapter instanceof EthereumAdapter || adapter instanceof TronAdapter || adapter instanceof SolanaAdapter) {
+              const onChainMeta = await adapter.getTokenMetadata(contractAddress);
+              symbol = symbol || onChainMeta.symbol;
+              name = name || onChainMeta.name;
+              decimals = decimals !== undefined ? decimals : onChainMeta.decimals;
+            } else {
+              symbol = symbol || 'TOKEN';
+              name = name || 'Custom Token';
+              decimals = decimals !== undefined ? decimals : 18;
+            }
           }
 
           const id = `${symbol.toLowerCase()}-${chain.toLowerCase()}`;
-          saveCustomToken({
+          const tokenConfig: TokenConfig = {
             id,
-            symbol,
+            symbol: symbol.toUpperCase(),
             name,
             chain,
             networkMode: mode,
             contractAddress,
             decimals,
-            standard: chain === 'sol' ? 'spl' : chain === 'trx' ? 'trc20' : 'erc20',
-          });
+            standard,
+          };
+
+          saveCustomToken(tokenConfig);
 
           return {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({ success: true, token: { id, symbol, name, chain, contractAddress, decimals } }, null, 2),
+                text: JSON.stringify({ success: true, verifiedOnChain: true, token: tokenConfig }, null, 2),
               },
             ],
           };

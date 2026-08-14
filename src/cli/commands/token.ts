@@ -15,6 +15,27 @@ import { walletExists, getWalletAddress, unlockVault } from '../../crypto/storag
 import { deriveAllKeys } from '../../crypto/keyDerivation.js';
 import { createSpinner } from '../ui.js';
 
+export function detectChainFromAddress(
+  address: string,
+  explicitChain?: string
+): { chain: string; standard: 'erc20' | 'spl' | 'trc20' } {
+  const addr = address.trim();
+  if (explicitChain) {
+    const std = explicitChain === 'sol' ? 'spl' : explicitChain === 'trx' ? 'trc20' : 'erc20';
+    return { chain: explicitChain.toLowerCase(), standard: std };
+  }
+  if (addr.startsWith('0x') && addr.length === 42) {
+    return { chain: 'eth', standard: 'erc20' };
+  }
+  if (addr.startsWith('T') && addr.length === 34) {
+    return { chain: 'trx', standard: 'trc20' };
+  }
+  if (addr.length >= 32 && addr.length <= 44) {
+    return { chain: 'sol', standard: 'spl' };
+  }
+  return { chain: 'eth', standard: 'erc20' };
+}
+
 export async function tokenCommand(
   actionArg?: string,
   tokenArg?: string,
@@ -30,7 +51,24 @@ export async function tokenCommand(
   let action = actionArg;
   let token = tokenArg;
 
-  // Flexible argument handler: if first argument is a token name (e.g. `mcw token usdc-sepolia`)
+  // Direct Shortcut: `mcw token add <contractAddress> [chain]`
+  if (action === 'add' && tokenArg) {
+    await autoAddToken(tokenArg, amountArg);
+    return;
+  }
+
+  // If user passes a contract address directly as first argument: `mcw token 0x1c7D...` or `mcw token TG3XX...`
+  if (actionArg && (actionArg.startsWith('0x') || actionArg.startsWith('T') || actionArg.length >= 32)) {
+    const existing = findToken(actionArg, mode);
+    if (existing) {
+      await fetchTokenBalances(actionArg);
+    } else {
+      await autoAddToken(actionArg, tokenArg);
+    }
+    return;
+  }
+
+  // Flexible argument handler: if first argument is a token name (e.g. `mcw token usdc-eth` or `mcw token usdt-trx`)
   if (actionArg && !['balance', 'add', 'send', 'list', 'remove'].includes(actionArg.toLowerCase())) {
     const found = findToken(actionArg, mode);
     if (found) {
@@ -57,7 +95,7 @@ export async function tokenCommand(
     return;
   }
 
-  // Shortcut: mcw token add
+  // Shortcut: mcw token add (interactive)
   if (action === 'add') {
     await addTokenWizard();
     return;
@@ -82,7 +120,7 @@ export async function tokenCommand(
       message: '🪙 Token Management (ERC-20, SPL, TRC-20):',
       choices: [
         { name: '💰 View Token Balances (USDC, USDT, LINK, etc.)', value: 'balance' },
-        { name: '➕ Add Custom Token Contract (ERC-20, SPL, or TRC-20)', value: 'add' },
+        { name: '➕ Add Custom Token (Auto-detect from Contract / Mint)', value: 'add' },
         { name: '📤 Send / Transfer Tokens', value: 'send' },
         { name: '📋 List Tracked Tokens', value: 'list' },
         { name: '🗑️  Remove a Custom Token', value: 'remove' },
@@ -120,15 +158,137 @@ export async function tokenCommand(
   }
 }
 
+/**
+ * Automatically fetch on-chain metadata and add token with 0 manual inputs!
+ */
+export async function autoAddToken(contractAddress: string, explicitChain?: string): Promise<TokenConfig | null> {
+  const mode = getNetworkMode();
+  const { chain, standard } = detectChainFromAddress(contractAddress, explicitChain);
+  const chainConfig = getChainConfig(chain, mode);
+
+  console.log(chalk.bold.cyan(`\n🔍 Auto-detecting Token Contract on ${chainConfig.networkName}...`));
+  const spinner = createSpinner('Querying blockchain for on-chain symbol, name & decimals...').start();
+
+  try {
+    const adapter = getChainAdapter(chain, mode);
+    let metadata = { symbol: 'TOKEN', name: 'Custom Token', decimals: 18 };
+
+    if (adapter instanceof EthereumAdapter) {
+      metadata = await adapter.getTokenMetadata(contractAddress);
+    } else if (adapter instanceof TronAdapter) {
+      metadata = await adapter.getTokenMetadata(contractAddress);
+    } else if (adapter instanceof SolanaAdapter) {
+      metadata = await adapter.getTokenMetadata(contractAddress);
+    }
+
+    spinner.succeed(chalk.green('On-chain token metadata verified!'));
+
+    const id = `${metadata.symbol.toLowerCase()}-${chain.toLowerCase()}`;
+    const tokenConfig: TokenConfig = {
+      id,
+      symbol: metadata.symbol.toUpperCase(),
+      name: metadata.name,
+      chain,
+      networkMode: mode,
+      contractAddress: contractAddress.trim(),
+      decimals: metadata.decimals,
+      standard,
+    };
+
+    saveCustomToken(tokenConfig);
+
+    const table = new Table({
+      head: [
+        chalk.cyan.bold('Property'),
+        chalk.cyan.bold('On-Chain Value'),
+      ],
+      style: { head: [], border: ['gray'] },
+    });
+
+    table.push(
+      [chalk.bold('Token Symbol'), chalk.yellow.bold(tokenConfig.symbol)],
+      [chalk.bold('Token Name'), chalk.white(tokenConfig.name)],
+      [chalk.bold('Decimals'), chalk.white(tokenConfig.decimals.toString())],
+      [chalk.bold('Standard'), chalk.cyan.bold(tokenConfig.standard.toUpperCase())],
+      [chalk.bold('Chain / Network'), chalk.white(`${tokenConfig.chain.toUpperCase()} (${chainConfig.networkName})`)],
+      [chalk.bold('Contract Address'), chalk.gray(tokenConfig.contractAddress)],
+      [chalk.bold('Token ID'), chalk.green(tokenConfig.id)]
+    );
+
+    console.log(chalk.bold.green(`\n✅ Token successfully added & tracked in ${mode.toUpperCase()} configuration:\n`));
+    console.log(table.toString());
+    console.log(chalk.gray(`\nTip: You can now check your balance with \`mcw token balance ${tokenConfig.id}\`\n`));
+
+    return tokenConfig;
+  } catch (err: any) {
+    spinner.fail(chalk.red(`Failed to fetch on-chain metadata: ${err.message}`));
+    return null;
+  }
+}
+
 async function addTokenWizard(): Promise<void> {
   const mode = getNetworkMode();
-  const availableChains = getAllChains(mode);
 
+  const { contractAddress } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'contractAddress',
+      message: 'Enter Token Contract Address (ERC-20 / TRC-20) or Mint Address (SPL):',
+      validate: (input: string) => (input.trim().length >= 32 ? true : 'Invalid contract or mint address.'),
+    },
+  ]);
+
+  const { chain, standard } = detectChainFromAddress(contractAddress);
+  const chainConfig = getChainConfig(chain, mode);
+
+  const spinner = createSpinner(`Detecting on-chain details on ${chainConfig.networkName}...`).start();
+  let metadata = { symbol: 'TOKEN', name: 'Custom Token', decimals: 18 };
+
+  try {
+    const adapter = getChainAdapter(chain, mode);
+    if (adapter instanceof EthereumAdapter || adapter instanceof TronAdapter || adapter instanceof SolanaAdapter) {
+      metadata = await adapter.getTokenMetadata(contractAddress);
+      spinner.succeed(chalk.green(`Auto-detected: ${metadata.symbol} (${metadata.name}, ${metadata.decimals} decimals)`));
+    } else {
+      spinner.stop();
+    }
+  } catch {
+    spinner.stop();
+  }
+
+  const { confirmAuto } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmAuto',
+      message: `Save auto-detected token (${metadata.symbol} - ${metadata.name}, ${metadata.decimals} decimals on ${chain.toUpperCase()})?`,
+      default: true,
+    },
+  ]);
+
+  if (confirmAuto) {
+    const id = `${metadata.symbol.toLowerCase()}-${chain.toLowerCase()}`;
+    saveCustomToken({
+      id,
+      symbol: metadata.symbol.toUpperCase(),
+      name: metadata.name,
+      chain,
+      networkMode: mode,
+      contractAddress: contractAddress.trim(),
+      decimals: metadata.decimals,
+      standard,
+    });
+    console.log(chalk.green(`\n✅ Custom Token '${chalk.bold(metadata.symbol)}' added successfully to ${mode.toUpperCase()}!\n`));
+    return;
+  }
+
+  // Fallback to manual entry if user wants to override
+  const availableChains = getAllChains(mode);
   const answers = await inquirer.prompt([
     {
       type: 'list',
       name: 'chain',
       message: `Select chain for the token (${mode.toUpperCase()}):`,
+      default: chain,
       choices: availableChains.map((c) => ({
         name: `${c.toUpperCase()} (${getChainConfig(c, mode).networkName})`,
         value: c,
@@ -136,48 +296,43 @@ async function addTokenWizard(): Promise<void> {
     },
     {
       type: 'input',
-      name: 'contractAddress',
-      message: 'Enter Token Contract Address (or Mint Address):',
-      validate: (input: string) => (input.trim().length >= 32 ? true : 'Invalid contract or mint address.'),
-    },
-    {
-      type: 'input',
       name: 'symbol',
       message: 'Enter Token Symbol (e.g. "USDC", "USDT", "LINK"):',
+      default: metadata.symbol,
       validate: (input: string) => (input.trim() ? true : 'Symbol is required.'),
     },
     {
       type: 'input',
       name: 'name',
       message: 'Enter Token Name (e.g. "USD Coin", "Tether USD"):',
-      default: (ans: any) => `${ans.symbol} Token`,
+      default: metadata.name,
     },
     {
       type: 'input',
       name: 'decimals',
-      message: 'Enter Decimals (usually 18 for ERC-20, 6 for USDC/USDT/TRC-20):',
-      default: '6',
+      message: 'Enter Decimals:',
+      default: metadata.decimals.toString(),
       validate: (input: string) => (!isNaN(parseInt(input, 10)) ? true : 'Must be an integer.'),
     },
   ]);
 
-  const standard = answers.chain === 'sol' ? 'spl' : answers.chain === 'trx' ? 'trc20' : 'erc20';
-  const id = `${answers.symbol.toLowerCase()}-${answers.chain.toLowerCase()}`;
+  const customStandard = answers.chain === 'sol' ? 'spl' : answers.chain === 'trx' ? 'trc20' : 'erc20';
+  const customId = `${answers.symbol.toLowerCase()}-${answers.chain.toLowerCase()}`;
 
   saveCustomToken({
-    id,
+    id: customId,
     symbol: answers.symbol.trim().toUpperCase(),
     name: answers.name.trim(),
     chain: answers.chain,
     networkMode: mode,
-    contractAddress: answers.contractAddress.trim(),
+    contractAddress: contractAddress.trim(),
     decimals: parseInt(answers.decimals, 10),
-    standard,
+    standard: customStandard,
   });
 
   console.log(
     chalk.green(
-      `\n✅ Custom Token '${chalk.bold(answers.symbol)}' (${standard.toUpperCase()}) added successfully to ${mode.toUpperCase()}!\n`
+      `\n✅ Custom Token '${chalk.bold(answers.symbol)}' (${customStandard.toUpperCase()}) added successfully to ${mode.toUpperCase()}!\n`
     )
   );
 }
