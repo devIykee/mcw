@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Multi-Chain Testnet Wallet & Agentic Framework (MC-TWAF)
+ * Multi-Chain CLI Wallet (MCW) & Agentic Framework
  *
- * Entry Point:
- * Automatically branches into either Human CLI mode or Agentic MCP Server mode.
+ * Entry Point & Exportable SDK:
+ * Automatically branches into either Human CLI mode or Agentic MCP Server mode,
+ * and exports programmatic TypeScript/JavaScript SDK for developer bot integration.
  */
 
 import { setupCli } from './cli/index.js';
 import { startMcpServer } from './mcp/server.js';
+
+export * from './sdk/index.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -20,7 +23,7 @@ async function main() {
     try {
       await startMcpServer();
     } catch (error: any) {
-      console.error('[MC-TWAF] MCP Server fatal error:', error.message);
+      console.error('[MCW] MCP Server fatal error:', error.message);
       process.exit(1);
     }
   } else {
@@ -30,7 +33,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[MC-TWAF] Fatal error:', err);
-  process.exit(1);
-});
+// Only execute CLI runner if running as a direct script/binary
+if (process.argv[1] && (process.argv[1].endsWith('mcw') || process.argv[1].endsWith('index.js') || process.argv[1].includes('bin'))) {
+  main().catch((err) => {
+    console.error('[MCW] Fatal error:', err);
+    process.exit(1);
+  });
+}

@@ -9,6 +9,10 @@ import { faucetCommand } from './commands/faucet.js';
 import { networkCommand } from './commands/network.js';
 import { configCommand } from './commands/config.js';
 import { tokenCommand } from './commands/token.js';
+import { swapCommand } from './commands/swap.js';
+import { policyCommand } from './commands/policy.js';
+import { historyCommand } from './commands/history.js';
+import { safeCommand } from './commands/safe.js';
 import { mcpDaemonCommand } from './commands/mcpDaemon.js';
 
 function getPackageVersion(): string {
@@ -16,10 +20,10 @@ function getPackageVersion(): string {
     const pkgPath = path.join(__dirname, '../../package.json');
     if (fs.existsSync(pkgPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      return pkg.version || '1.0.8';
+      return pkg.version || '1.1.0';
     }
   } catch {}
-  return '1.0.8';
+  return '1.1.0';
 }
 
 export function setupCli(): Command {
@@ -36,10 +40,11 @@ Examples:
   $ mcw init                     Initialize or restore a multi-chain wallet
   $ mcw balance                  View native balances across BTC, ETH, SOL, TRX & Custom Chains
   $ mcw token balance            View balances for all tracked tokens (USDC, USDT, LINK, etc.)
-  $ mcw token add                Launch interactive wizard to add any ERC-20, SPL, or TRC-20 token
-  $ mcw token send               Interactively send tokens with fee estimation & password signing
-  $ mcw config                   Add custom EVM chains / L2s, set custom RPCs, or toggle Tron flavor
-  $ mcw network mainnet          Switch between testnet and mainnet
+  $ mcw token add <contract>     Auto-detect and track any token from smart contract on-chain
+  $ mcw swap 0.1 ETH USDC        Find optimal DEX route (Uniswap / Jupiter) and execute swap
+  $ mcw policy                   Configure spend limits, whitelists, and agent safety guardrails
+  $ mcw history                  View local audit log and agent transaction memory
+  $ mcw safe propose <safe> <to> Propose a multi-sig transaction for Gnosis Safe
   $ mcw mcp                      Start JSON-RPC Model Context Protocol (MCP) server for AI agents
 `
     );
@@ -56,16 +61,6 @@ Examples:
     .command('balance')
     .description('Fetch live balances across Bitcoin, Ethereum, Solana, Tron, and registered Custom EVM Chains')
     .argument('[chain]', 'Specific chain (btc, eth, sol, trx, or custom chain id)')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw balance                  Query all native chains and custom EVM L2s
-  $ mcw balance eth              Query Ethereum / Sepolia native balance
-  $ mcw balance sol              Query Solana Devnet / Mainnet SOL balance
-  $ mcw balance trx              Query Tron Nile / Shasta / Mainnet TRX balance
-`
-    )
     .action(async (chain) => {
       printBanner();
       await balanceCommand(chain);
@@ -75,15 +70,6 @@ Examples:
     .command('network')
     .description('View or switch active network mode (testnet or mainnet)')
     .argument('[mode]', 'Target mode (testnet | mainnet)')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw network                  Show active network mode
-  $ mcw network testnet          Switch to risk-free testnets (Sepolia, Devnet, Nile/Shasta, Testnet3)
-  $ mcw network mainnet          Switch to live Mainnet (Real Assets)
-`
-    )
     .action(async (mode) => {
       printBanner();
       await networkCommand(mode);
@@ -93,59 +79,105 @@ Examples:
     .command('token')
     .description('Manage and query smart contract tokens across ERC-20 (EVM), SPL (Solana), and TRC-20 (Tron)')
     .argument('[action]', 'Action to perform (balance | add | send | list | remove)')
-    .argument('[token]', 'Token symbol or ID (e.g. usdc-sepolia, usdt-trx, link-sepolia)')
+    .argument('[token]', 'Token symbol, ID, or contract address')
     .argument('[amount]', 'Amount of tokens to send')
     .argument('[to]', 'Recipient wallet address')
-    .addHelpText(
-      'after',
-      `
-Available Actions:
-  balance [token]                Fetch live token balances across all chains or for a specific token
-  add                            Interactive wizard to register a new token contract
-  send [token] [amount] [to]     Send tokens with password approval
-  list                           List all configured tokens (Built-in and Custom)
-  remove <tokenId>               Delete a custom token from tracking
-
-Examples:
-  $ mcw token                    Open interactive token management menu
-  $ mcw token list               Display all tracked ERC-20, SPL, and TRC-20 tokens
-  $ mcw token balance            Query live balances for all configured tokens
-  $ mcw token balance usdc-eth   Query balance for a specific token
-  $ mcw token add                Launch step-by-step wizard to track any token contract
-  $ mcw token send               Interactively select a token, enter recipient & amount, and sign
-  $ mcw token send usdc-eth 10 0x0f0B...   Transfer 10 Sepolia USDC to recipient
-  $ mcw token send usdt-trx 50 TQ7zfy...   Transfer 50 Shasta/Nile USDT to Tron recipient
-`
-    )
     .action(async (action, token, amount, to) => {
       printBanner();
       await tokenCommand(action, token, amount, to);
     });
 
   program
-    .command('config')
-    .description('Configure custom networks, RPC endpoints, add Custom EVM chains, and select Tron flavor (Nile vs Shasta)')
-    .argument('[action]', 'Action (tron | set-rpc | list | add-chain | remove-chain)')
-    .argument('[chain]', 'Chain or Tron flavor (nile | shasta | eth | sol | btc | trx)')
-    .argument('[value]', 'RPC URL value')
+    .command('swap')
+    .description('DEX Aggregator: Get quotes and swap tokens via Uniswap V3 (EVM) or Jupiter (Solana)')
+    .argument('[amount]', 'Amount to sell')
+    .argument('[fromToken]', 'Token to sell (e.g. ETH, SOL, USDC)')
+    .argument('[toToken]', 'Token to buy (e.g. USDC, LINK, USDT)')
+    .argument('[chain]', 'Target chain (eth, sol)')
     .addHelpText(
       'after',
       `
-Available Actions:
-  tron <nile|shasta>             Switch Tron testnet between Nile and Shasta
-  set-rpc <chain> <url>          Override RPC URL for a built-in chain
-  list                           Display all active network configs, custom RPCs, and custom chains
-  add-chain                      Interactive wizard to add custom EVM chains (Base, Polygon, Arbitrum, BSC, Localhost 8545)
-  remove-chain <chainId>         Remove a registered custom chain
-
 Examples:
-  $ mcw config                   Open interactive network configuration menu
-  $ mcw config tron shasta       Switch Tron testnet to Shasta (api.shasta.trongrid.io)
-  $ mcw config tron nile         Switch Tron testnet to Nile (nile.trongrid.io)
-  $ mcw config set-rpc eth https://your-alchemy-node.com
-  $ mcw config list              View active network parameters
+  $ mcw swap                     Launch interactive DEX swap wizard
+  $ mcw swap 0.1 ETH USDC        Swap 0.1 ETH for USDC on Ethereum / Sepolia (Uniswap V3)
+  $ mcw swap 0.5 SOL USDC sol    Swap 0.5 SOL for USDC on Solana (Jupiter Aggregator)
 `
     )
+    .action(async (amount, fromToken, toToken, chain) => {
+      printBanner();
+      await swapCommand(amount, fromToken, toToken, chain);
+    });
+
+  program
+    .command('policy')
+    .description('Configure spend limits, 24h rolling caps, address whitelists/blacklists, and agent guardrails')
+    .argument('[action]', 'Action (list | set-limit | whitelist | blacklist | toggle)')
+    .argument('[chain]', 'Chain (eth, sol, btc, trx)')
+    .argument('[val1]', 'Max spend per tx, or address')
+    .argument('[val2]', 'Daily rolling spend limit')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ mcw policy                   Interactive policy guardrails menu
+  $ mcw policy list              View all spend limits, whitelists, and blacklists
+  $ mcw policy set-limit eth 0.5 2.0  Set ETH limits: max 0.5/tx, max 2.0 daily
+  $ mcw policy whitelist eth 0x123... Add trusted address to Whitelist
+  $ mcw policy blacklist eth 0xScam.. Add malicious address to Blacklist
+  $ mcw policy toggle            Enable or disable policy enforcement
+`
+    )
+    .action(async (action, chain, val1, val2) => {
+      printBanner();
+      await policyCommand(action, chain, val1, val2);
+    });
+
+  program
+    .command('history')
+    .description('View local audit logs, agent transaction memory, and past broadcasts')
+    .argument('[chain]', 'Optional chain filter (eth, sol, btc, trx)')
+    .argument('[limit]', 'Maximum entries to display (default: 15)')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ mcw history                  View recent transaction audit logs
+  $ mcw history eth              View Ethereum transaction history
+  $ mcw history 5                Show last 5 transactions
+`
+    )
+    .action(async (chain, limit) => {
+      printBanner();
+      await historyCommand(chain, limit);
+    });
+
+  program
+    .command('safe')
+    .description('Gnosis Safe multisig transaction proposal and EIP-712 typed data generator')
+    .argument('[action]', 'Action (propose)')
+    .argument('[safeAddress]', 'Safe multisig contract address (0x...)')
+    .argument('[to]', 'Destination recipient address')
+    .argument('[amount]', 'Amount in ETH')
+    .argument('[data]', 'Optional calldata hex')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ mcw safe                     Interactive Safe multisig proposal wizard
+  $ mcw safe propose 0xSafe... 0xRecipient... 0.1  Propose 0.1 ETH transfer for multisig approval
+`
+    )
+    .action(async (action, safeAddress, to, amount, data) => {
+      printBanner();
+      await safeCommand(action, safeAddress, to, amount, data);
+    });
+
+  program
+    .command('config')
+    .description('Configure custom networks, RPC endpoints, add Custom EVM chains, and select Tron flavor')
+    .argument('[action]', 'Action (tron | set-rpc | list | add-chain | remove-chain)')
+    .argument('[chain]', 'Chain or Tron flavor (nile | shasta | eth | sol | btc | trx)')
+    .argument('[value]', 'RPC URL value')
     .action(async (action, chain, value) => {
       printBanner();
       await configCommand(action, chain, value);
@@ -157,16 +189,6 @@ Examples:
     .argument('[chain]', 'Target chain (btc, eth, sol, trx, or custom chain id)')
     .argument('[amount]', 'Amount in human units (e.g. 0.01)')
     .argument('[to]', 'Recipient address')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw send                     Launch interactive send wizard
-  $ mcw send sol 0.5 4HVvPD...   Send 0.5 SOL
-  $ mcw send eth 0.01 0x0f0B...  Send 0.01 ETH
-  $ mcw send trx 50 TQ7zfy...    Send 50 TRX
-`
-    )
     .action(async (chain, amount, to) => {
       printBanner();
       await sendCommand(chain, amount, to);
@@ -176,15 +198,6 @@ Examples:
     .command('faucet')
     .description('Request testnet funds/airdrop from faucets (Testnet mode only)')
     .argument('[chain]', 'Target chain (btc, eth, sol, trx)')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw faucet sol               Request instant 1.0 SOL airdrop on Solana Devnet
-  $ mcw faucet eth               Get Sepolia ETH faucet instructions & URL
-  $ mcw faucet trx               Get Tron Nile/Shasta faucet portal URL
-`
-    )
     .action(async (chain) => {
       printBanner();
       await faucetCommand(chain);

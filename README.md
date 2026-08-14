@@ -1,148 +1,142 @@
-# Multi-Chain CLI Wallet (MCW) & Agentic Framework
+# MCW (Multi-Chain CLI Wallet & Agentic Framework)
 
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7+-blue.svg)](https://www.typescriptlang.org/)
-[![Model Context Protocol](https://img.shields.io/badge/MCP-Standard%20Server-green.svg)](https://modelcontextprotocol.io/)
-[![npm package](https://img.shields.io/badge/npm-@deviykee/mcw-red.svg)](https://www.npmjs.com/package/@deviykee/mcw)
+![License](https://img.shields.io/badge/License-CC--BY--4.0-blue.svg)
+![npm](https://img.shields.io/npm/v/@deviykee/mcw.svg)
+![Node](https://img.shields.io/badge/node-%3E%3D20.0.0-green.svg)
 
-A robust, enterprise-grade multi-chain wallet and AI agent framework serving two primary consumers seamlessly:
-1. **Humans:** Via a rich, interactive, and beautiful Command Line Interface (**`mcw`**).
-2. **AI Agents:** Via a standard **Model Context Protocol (MCP)** server interface, exposing wallet capabilities as MCP Tools to agents (Claude Desktop, Cursor, Gemini CLI, LangChain, AutoGPT).
+> **A non-custodial multi-chain wallet, DEX aggregator, and agentic framework for Bitcoin, Ethereum, Solana, and Tron. Built for humans via an interactive CLI and for AI agents via Model Context Protocol (MCP).**
 
 ---
 
-## 🌐 Supported Networks & Derivation Standards
+## 🌟 Key Features
 
-| Blockchain | Testnet Networks | Mainnet Network | Derivation Standard | Derivation Path | Address Format |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Bitcoin (BTC)** | Testnet3 / Signet | Mainnet | BIP-84 / BIP-44 | `m/84'/(1'\|0')/0'/0/0` | Native SegWit (`tb1q...` / `bc1q...`) |
-| **Ethereum (ETH)**| Sepolia / Holesky | Mainnet | BIP-44 | `m/44'/60'/0'/0/0` | Checksummed (`0x...`) |
-| **Solana (SOL)**  | Devnet | Mainnet-Beta | SLIP-0010 / BIP-44 | `m/44'/501'/0'/0'` | Base58 (`...`) |
-| **Tron (TRX)**    | **Nile / Shasta** | Mainnet | BIP-44 | `m/44'/195'/0'/0/0`| Base58Check (`T...`) |
+- **🔑 Single Seed, 4 Blockchains:** Deterministically derives Bitcoin (`tb1q`/`bc1q`), Ethereum (`0x...`), Solana (`Base58`), and Tron (`T...`) addresses from a single BIP-39 mnemonic phrase.
+- **🛡️ Policy Guardrails & Spend Limits:** Protect against rogue agent actions with per-transaction limits, 24-hour rolling spend caps, and address whitelists/blacklists (`mcw policy`).
+- **🔄 Built-in DEX Aggregator (`mcw swap`):** Automated testnet/mainnet swap routing across **Uniswap V3** (EVM) and **Jupiter Aggregator** (Solana).
+- **🔬 Pre-Flight Transaction Simulation:** Dry-run transactions using `eth_call` and Solana `simulateTransaction` before broadcast to view gas consumption and asset deltas.
+- **🪙 Multi-Chain Smart Contract Tokens:** Track, auto-detect, and transfer **ERC-20** (Ethereum/Sepolia/L2s), **SPL** (Solana Devnet/Mainnet), and **TRC-20** (Tron Shasta/Nile/Mainnet) tokens.
+- **📜 Local Audit Memory (`mcw history`):** Persistent logging of all agent transactions, swaps, and memos for multi-session agent recall.
+- **🔐 Gnosis Safe Multisig Integration (`mcw safe`):** Formulate multi-sig proposals and generate EIP-712 typed data for hardware wallet (Ledger/Trezor) approval.
+- **🤖 Standard MCP Daemon:** Exposes 15+ JSON-RPC tools for AI agents (Claude Code, Cursor, Grok, Gemini CLI).
+- **📦 Programmatic TypeScript SDK (`@deviykee/mcw`):** Direct SDK for LangChain, Vercel AI SDK, and autonomous bot developers.
 
 ---
 
-## Quick Start (CLI: `mcw`)
+## 🚀 Quick Start (Zero-Install)
 
-You can run `mcw` globally on your machine (via `npm link` or `npm i -g @deviykee/mcw`) or with **zero installation** via `npx @deviykee/mcw`.
+Run instantly using `npx`:
+
+```bash
+# Initialize a new wallet (or restore with existing seed phrase)
+npx @deviykee/mcw init
+
+# Check live multi-chain balances
+npx @deviykee/mcw balance
+
+# Auto-detect and track any token contract on-chain
+npx @deviykee/mcw token add 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
+
+# Swap tokens via DEX router
+npx @deviykee/mcw swap 0.1 ETH USDC
+
+# Inspect active spend guardrails
+npx @deviykee/mcw policy list
+```
+
+---
+
+## 📦 Global Installation
+
+```bash
+npm install -g @deviykee/mcw@latest
+```
+
+---
+
+## 🛠️ CLI Commands & Usage
 
 ### 1. Initialize Wallet
-Generates a fresh 12/24-word BIP-39 mnemonic phrase (or imports an existing one), encrypts the vault using **AES-256-GCM with Scrypt key derivation**, and displays derived addresses:
-
 ```bash
 mcw init
-# Or zero-install:
-npx @deviykee/mcw init
 ```
 
-### 2. Switch Between Testnet & Mainnet
-Toggle environments with safety guards and confirmation prompts:
-
+### 2. View Balances
 ```bash
-# View active network mode
-mcw network
-
-# Switch to Testnet (risk-free)
-mcw network testnet
-
-# Switch to Mainnet (live assets)
-mcw network mainnet
+mcw balance         # Live table across BTC, ETH, SOL, TRX & Custom Chains
+mcw balance eth     # Specific chain balance
 ```
 
-### 3. Check Live Balances
-Queries live RPCs and displays formatted ASCII tables:
-
+### 3. Multi-Chain Token Management (ERC-20, SPL, TRC-20)
 ```bash
-# Check all chains in active network
-mcw balance
+# 1. 1-Command Auto-Detection & Tracking (Auto-fetches symbol, name, decimals on-chain)
+mcw token add 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238   # Sepolia USDC (ERC-20)
+mcw token add TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs           # Shasta USDT (TRC-20)
 
-# Check a specific chain
-mcw balance eth
-mcw balance sol
-mcw balance btc
-mcw balance trx
+# 2. Check token balances
+mcw token balance
+mcw token balance usdc-eth
+
+# 3. Transfer tokens
+mcw token send usdc-eth 10 0xRecipientAddress...
+mcw token send usdt-trx 50 TRecipientAddress...
+
+# 4. List all configured tokens
+mcw token list
 ```
 
-### 4. Tron Nile vs Shasta Selection & Custom RPCs
-Configure custom RPC endpoints or toggle between Tron testnet flavors:
-
+### 4. Built-in DEX Aggregation (`mcw swap`)
 ```bash
-# Switch Tron testnet to Shasta
+mcw swap 0.1 ETH USDC        # Uniswap V3 swap quote & execution
+mcw swap 0.5 SOL USDC sol    # Jupiter DEX swap on Solana
+```
+
+### 5. Policy Guardrails & Spend Limits (`mcw policy`)
+```bash
+# View active policies
+mcw policy list
+
+# Set maximum spend per tx and 24h rolling limit
+mcw policy set-limit eth 0.5 2.0
+
+# Add trusted recipient to whitelist
+mcw policy whitelist eth 0x1234567890123456789012345678901234567890
+
+# Block malicious address
+mcw policy blacklist eth 0xBadActorAddress...
+
+# Enable/Disable guardrails
+mcw policy toggle
+```
+
+### 6. Local Audit Logging (`mcw history`)
+```bash
+mcw history        # View recent transactions and agent memos
+mcw history eth 10 # Filter by chain and limit
+```
+
+### 7. Gnosis Safe Multisig Proposal (`mcw safe`)
+```bash
+mcw safe propose 0xSafeAddress... 0xRecipientAddress... 0.1
+```
+
+### 8. Custom EVM Chains & RPC Overrides (`mcw config`)
+```bash
+# Toggle Tron testnet flavor
 mcw config tron shasta
-
-# Switch Tron testnet to Nile
 mcw config tron nile
 
-# Set a custom RPC URL for any chain (e.g. Alchemy / QuickNode / local node)
-mcw config set-rpc eth https://your-custom-eth-node.com
-mcw config set-rpc sol https://your-custom-sol-node.com
-
-# View active configurations and custom overrides
+# Custom RPC override
+mcw config set-rpc eth https://your-alchemy-node.com
 mcw config list
-
-# Interactive configuration menu
-mcw config
-```
-
-### 5. Multi-Chain Token Management (ERC-20, SPL, TRC-20)
-Track, query live balances, and transfer tokens directly from smart contracts across Ethereum, Solana, and Tron:
-
-```bash
-# 1. List all tracked tokens (Pre-configured Sepolia USDC, LINK, Solana USDC + any custom tokens)
-mcw token list
-
-# 2. Check live token balances across all chains
-mcw token balance
-
-# 3. Check live balance for a specific token
-mcw token balance usdc-eth
-mcw token balance usdt-trx
-
-# 4. Add any custom token contract (Auto-Detects Chain, Symbol, Name & Decimals on-chain!)
-mcw token add 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238   # Instant ERC-20 auto-detection (Sepolia USDC)
-mcw token add TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs           # Instant TRC-20 auto-detection (Tron Shasta USDT)
-mcw token add                                              # Or launch interactive wizard
-
-# 5. Send tokens on-chain with password authorization
-mcw token send                                  # Interactive mode
-mcw token send usdc-eth 10 0x0f0B0A7eD...       # Send 10 ERC-20 USDC on Ethereum/Sepolia
-mcw token send usdt-trx 50 TQ7zfyjKkgE...       # Send 50 TRC-20 USDT on Tron Shasta/Nile
-
-# 6. Remove a custom token
-mcw token remove usdt-trx
-```
-
-### 6. Request Testnet Faucet / Airdrop
-Requests instant testnet tokens (with automated JSON-RPC airdrop on Solana Devnet and direct faucet links for other networks):
-
-```bash
-mcw faucet sol
-mcw faucet eth
-mcw faucet trx
-mcw faucet btc
-```
-
-### 7. Send Coins
-Interactively estimates fees, asks for vault decryption password, signs, and broadcasts the transaction:
-
-```bash
-# Interactive mode:
-mcw send
-
-# Direct parameters:
-mcw send sol 0.1 <RECIPIENT_SOL_ADDRESS>
-mcw send eth 0.01 <RECIPIENT_ETH_ADDRESS>
 ```
 
 ---
 
-## AI Agent MCP Server Integration
+## 🤖 AI Agent MCP Server Integration
 
 MCW implements the official `@modelcontextprotocol/sdk` JSON-RPC specification over `stdio`.
 
-### MCP Configuration for Claude Desktop / Cursor
-
-Add the following to your `claude_desktop_config.json` (or Cursor/Gemini MCP config):
+### MCP Configuration (`claude_desktop_config.json` / Cursor / Grok)
 
 ```json
 {
@@ -157,43 +151,52 @@ Add the following to your `claude_desktop_config.json` (or Cursor/Gemini MCP con
 
 ### Available MCP Tools
 
-#### 📖 Read-Only Tools (No password required)
-1. **`get_network_mode`**: Returns whether the wallet is in `testnet` or `mainnet`.
-2. **`switch_network_mode`**: Toggles between `"testnet"` and `"mainnet"`.
-3. **`get_addresses`**: Returns public addresses and derivation paths for Bitcoin, Ethereum, Solana, and Tron.
-4. **`get_balance`**: Fetches real-time balances for a specific chain or all chains in the active network.
-5. **`get_transaction_status`**: Queries transaction status and confirmation count.
-6. **`request_faucet`**: Triggers automated airdrop or returns faucet claim instructions (testnet mode).
-
-#### Action Tools (Safety Protected)
-7. **`build_transaction`**: Formulates raw transaction, calculates network gas/fees, and queues transaction in the approval gate with status `PENDING_HUMAN_APPROVAL`. Returns a `pendingTxId`.
-8. **`sign_and_send_transaction`**: Unlocks vault using human password (or session auth) and broadcasts to the network.
-9. **`list_pending_transactions`**: Lists all pending transactions waiting for human approval.
-
----
-
-## Agent Skills (Claude Code, Grok, Cursor, Gemini CLI)
-
-MCW includes standardized **Agent Skills** located in [`skills/mcw/`](file:///home/iyke/coding/cli-wallet/skills/mcw):
-
-- **[`SKILL.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/SKILL.md):** Complete skill specification with YAML frontmatter, execution rules, and multi-chain safety protocols.
-- **[`reference.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/reference.md):** Technical command matrix and MCP JSON-RPC parameter schemas.
-- **[`examples.md`](file:///home/iyke/coding/cli-wallet/skills/mcw/examples.md):** Real-world prompt templates and autonomous workflows.
-
-### Installing Skill in Claude Code / CLI Agents
-Copy the `skills/mcw` directory into your project's `.skills/` or reference `skills/mcw/SKILL.md` directly in your system prompt or custom instructions.
+| Tool Name | Type | Description |
+| :--- | :--- | :--- |
+| `get_addresses` | Read | Returns public addresses and derivation paths across all chains |
+| `get_balance` | Read | Live native balances for BTC, ETH, SOL, TRX, and Custom Chains |
+| `get_token_balance` | Read | Real-time smart contract balances (ERC-20, SPL, TRC-20) |
+| `add_token` | Action | Auto-detects chain and metadata on-chain to track new tokens |
+| `swap_tokens` | Action | DEX routing and quotation with human approval gate |
+| `simulate_transaction` | Action | Pre-flight dry run simulation with asset delta tracking |
+| `get_transaction_history`| Read | Local audit memory and past transaction logs |
+| `get_policies` | Read | Spend limits and safety guardrails status |
+| `propose_safe_transaction` | Action | Formulate Gnosis Safe multi-sig proposals with EIP-712 hash |
+| `build_transaction` | Action | Validates policy, simulates call, and queues for approval |
+| `sign_and_send_transaction`| Auth | Signs and broadcasts pending transaction with human password |
 
 ---
 
-## Cryptography & Security Model
+## 📦 Programmatic TypeScript SDK
 
-- **BIP-39:** Mnemonic seed generation with PBKDF2 HMAC-SHA512.
-- **BIP-84 / BIP-44 / SLIP-0010:** Native SegWit ECDSA (BTC), Keccak256 ECDSA (ETH & TRX), and Ed25519 (SOL).
-- **AES-256-GCM:** Authenticated symmetric encryption with random 96-bit IV and 128-bit authentication tag.
-- **Scrypt KDF:** High-iteration, memory-hard key derivation (`N=16384, r=8, p=1, maxmem=64MB`) to guard against brute-force attacks.
-- **File System Permissions:** Storage directory (`~/.mcw/`) created with `0700` permissions and encrypted vault (`vault.dat`) saved with `0600` permissions (Unix).
+Developers can import `McwWallet` directly into TypeScript / JavaScript applications:
+
+```typescript
+import { McwWallet, DexSwapper, PolicyEngine } from '@deviykee/mcw';
+
+// Instantiate wallet
+const wallet = new McwWallet('your twelve word mnemonic seed phrase...', 'testnet');
+
+// Get all multi-chain addresses
+const addresses = wallet.getAddresses();
+console.log('Ethereum:', addresses.eth);
+console.log('Solana:', addresses.sol);
+
+// Query balance
+const balance = await wallet.getBalance('eth');
+
+// Pre-flight transaction simulation
+const sim = await wallet.simulate('eth', '0xRecipient...', '0.1');
+console.log('Simulation Status:', sim.status, 'Gas:', sim.gasOrFeeEstimated);
+
+// Get DEX swap quote
+const quote = await DexSwapper.getQuote('eth', 'testnet', 'ETH', 'USDC', '0.5');
+console.log(`Expected Output: ${quote.expectedAmountOut} USDC via ${quote.dexName}`);
+```
 
 ---
 
-## License
-MIT License. Built for multi-chain testnet/mainnet operations and autonomous agent integration.
+## 📜 Attribution & License
+
+- **Author:** deviykee (`eokorie1911@gmail.com`)
+- **License:** Creative Commons Attribution 4.0 International (`CC-BY-4.0`)

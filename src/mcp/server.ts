@@ -12,12 +12,17 @@ import { SupportedChain, getChainConfig, getNetworkMode, setNetworkMode, Network
 import { getAllTokens, findToken, saveCustomToken, TokenConfig } from '../config/tokens.js';
 import { detectChainFromAddress } from '../cli/commands/token.js';
 import { approvalGate } from './approvalGate.js';
+import { PolicyEngine, loadPolicies, savePolicies } from '../policy/policyEngine.js';
+import { TransactionSimulator } from '../simulation/simulator.js';
+import { HistoryManager } from '../history/historyManager.js';
+import { DexSwapper } from '../dex/swapper.js';
+import { SafeManager } from '../safe/safeManager.js';
 
 export function createMcpServer(): Server {
   const server = new Server(
     {
       name: 'mcw-mcp-server',
-      version: '1.0.8',
+      version: '1.1.0',
     },
     {
       capabilities: {
@@ -129,6 +134,113 @@ export function createMcpServer(): Server {
           },
         },
         {
+          name: 'swap_tokens',
+          description:
+            'DEX Aggregator: Calculate optimal route and formulate token swap on Uniswap V3 (EVM) or Jupiter (Solana). Queues swap in approval gate.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chain: {
+                type: 'string',
+                enum: ['eth', 'sol'],
+                description: 'Target blockchain (eth for Uniswap V3, sol for Jupiter)',
+              },
+              fromToken: {
+                type: 'string',
+                description: 'Token to sell (e.g. ETH, SOL, USDC)',
+              },
+              toToken: {
+                type: 'string',
+                description: 'Token to buy (e.g. USDC, LINK, USDT)',
+              },
+              amount: {
+                type: 'string',
+                description: 'Amount of input token to swap',
+              },
+            },
+            required: ['chain', 'fromToken', 'toToken', 'amount'],
+          },
+        },
+        {
+          name: 'simulate_transaction',
+          description:
+            'Simulate / Dry-run a transaction on the blockchain without broadcasting. Returns execution status, gas units, and asset deltas.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chain: {
+                type: 'string',
+                description: 'Target chain (eth, sol, etc.)',
+              },
+              to: {
+                type: 'string',
+                description: 'Destination recipient or contract address',
+              },
+              amount: {
+                type: 'string',
+                description: 'Amount in native currency (e.g. "0.1")',
+              },
+              data: {
+                type: 'string',
+                description: 'Optional hex calldata',
+              },
+            },
+            required: ['chain', 'to', 'amount'],
+          },
+        },
+        {
+          name: 'get_transaction_history',
+          description: 'Query local audit logs and agent transaction memory across chains.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chain: {
+                type: 'string',
+                description: 'Optional chain filter (eth, sol, btc, trx)',
+              },
+              limit: {
+                type: 'number',
+                description: 'Max entries to return (default: 20)',
+              },
+            },
+          },
+        },
+        {
+          name: 'get_policies',
+          description: 'Inspect active policy guardrails, spend limits, and address whitelists.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'propose_safe_transaction',
+          description:
+            'Formulate a Gnosis Safe multisig transaction proposal and generate EIP-712 typed data for hardware wallet / Safe{Core} signing.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              safeAddress: {
+                type: 'string',
+                description: 'Gnosis Safe multisig address (0x...)',
+              },
+              to: {
+                type: 'string',
+                description: 'Target recipient or contract address',
+              },
+              amount: {
+                type: 'string',
+                description: 'Amount in ETH',
+              },
+              data: {
+                type: 'string',
+                description: 'Optional calldata hex',
+              },
+            },
+            required: ['safeAddress', 'to', 'amount'],
+          },
+        },
+        {
           name: 'get_transaction_status',
           description: 'Query confirmation status and receipt of a transaction.',
           inputSchema: {
@@ -163,7 +275,7 @@ export function createMcpServer(): Server {
         {
           name: 'build_transaction',
           description:
-            'Formulate and validate a transaction payload, calculate gas/fees, and create a pending transaction requiring human approval.',
+            'Formulate and validate a transaction payload, verify policy guardrails, simulate execution, and create a pending transaction requiring human approval.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -182,6 +294,10 @@ export function createMcpServer(): Server {
               data: {
                 type: 'string',
                 description: 'Optional transaction hex data or memo',
+              },
+              agentReason: {
+                type: 'string',
+                description: 'Agent rationale or memo for this transaction to record in audit memory',
               },
             },
             required: ['chain', 'to', 'amount'],
@@ -424,6 +540,148 @@ export function createMcpServer(): Server {
           };
         }
 
+        case 'swap_tokens': {
+          const chain = args?.chain as string;
+          const fromToken = args?.fromToken as string;
+          const toToken = args?.toToken as string;
+          const amount = args?.amount as string;
+
+          if (!chain || !fromToken || !toToken || !amount) {
+            throw new McpError(ErrorCode.InvalidParams, 'chain, fromToken, toToken, and amount are required.');
+          }
+
+          // Policy check
+          const policyCheck = PolicyEngine.validateTransaction(chain, 'DEX_ROUTER', amount, fromToken);
+          if (!policyCheck.allowed) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `ERROR: Policy Violation. Swap blocked by local guardrails: ${policyCheck.reason}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const quote = await DexSwapper.getQuote(chain, mode, fromToken, toToken, amount);
+          const fromAddress = getWalletAddress(chain, mode);
+          const builtTx = DexSwapper.buildEVMSwapTransaction(chain, mode, fromAddress, quote);
+
+          // Register in Approval Gate
+          const pending = approvalGate.registerPendingTx(chain as SupportedChain, fromAddress, builtTx);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    status: 'PENDING_HUMAN_APPROVAL',
+                    type: 'DEX_SWAP',
+                    quote,
+                    pendingTxId: pending.id,
+                    summary: pending.summary,
+                    approvalInstruction: `To execute swap, invoke sign_and_send_transaction with pendingTxId: "${pending.id}" and approvalPassword.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'simulate_transaction': {
+          const chain = args?.chain as string;
+          const to = args?.to as string;
+          const amount = args?.amount as string;
+          const data = (args?.data as string) || '0x';
+
+          if (!chain || !to || !amount) {
+            throw new McpError(ErrorCode.InvalidParams, 'chain, to, and amount are required.');
+          }
+
+          const fromAddress = getWalletAddress(chain, mode);
+          let simResult;
+          if (chain === 'sol') {
+            simResult = await TransactionSimulator.simulateSolana(mode, fromAddress, to, amount);
+          } else {
+            simResult = await TransactionSimulator.simulateEVM(chain, mode, fromAddress, to, amount, data);
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(simResult, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'get_transaction_history': {
+          const chain = args?.chain as string | undefined;
+          const limit = (args?.limit as number) || 20;
+
+          const history = HistoryManager.getHistory({ chain, networkMode: mode, limit });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(history, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'get_policies': {
+          const policies = loadPolicies();
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(policies, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'propose_safe_transaction': {
+          const safeAddress = args?.safeAddress as string;
+          const to = args?.to as string;
+          const amount = args?.amount as string;
+          const data = (args?.data as string) || '0x';
+
+          if (!safeAddress || !to || !amount) {
+            throw new McpError(ErrorCode.InvalidParams, 'safeAddress, to, and amount are required.');
+          }
+
+          const proposal = await SafeManager.proposeTransaction(safeAddress, 'eth', mode, to, amount, data);
+
+          HistoryManager.logTransaction({
+            type: 'safe_proposal',
+            chain: 'eth',
+            networkMode: mode,
+            fromAddress: safeAddress,
+            toAddress: to,
+            amount,
+            symbol: 'ETH',
+            status: 'submitted',
+            agentMemo: `AI Proposed Safe multisig transaction (SafeTxHash: ${proposal.safeTxHash})`,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(proposal, null, 2),
+              },
+            ],
+          };
+        }
+
         case 'get_transaction_status': {
           const chain = args?.chain as string;
           const txHash = args?.txHash as string;
@@ -481,14 +739,41 @@ export function createMcpServer(): Server {
           const to = args?.to as string;
           const amount = args?.amount as string;
           const data = args?.data as string | undefined;
+          const agentReason = args?.agentReason as string | undefined;
 
           if (!chain || !to || !amount) {
             throw new McpError(ErrorCode.InvalidParams, 'chain, to, and amount are required.');
           }
 
+          // Policy check
+          const policyCheck = PolicyEngine.validateTransaction(chain, to, amount);
+          if (!policyCheck.allowed) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `ERROR: Security Policy Violation. Transaction blocked by local guardrails: ${policyCheck.reason}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+
           const fromAddress = getWalletAddress(chain, mode);
           const adapter = getChainAdapter(chain, mode);
           const builtTx = await adapter.buildTransaction(fromAddress, { to, amount, data });
+
+          // Pre-flight simulation
+          let simSummary = 'Pre-flight format valid';
+          try {
+            if (chain === 'sol') {
+              const sim = await TransactionSimulator.simulateSolana(mode, fromAddress, to, amount);
+              simSummary = `Simulation: ${sim.status}`;
+            } else if (chain === 'eth') {
+              const sim = await TransactionSimulator.simulateEVM(chain, mode, fromAddress, to, amount, data);
+              simSummary = `Simulation: ${sim.status} (Gas: ${sim.gasOrFeeEstimated})`;
+            }
+          } catch {}
 
           // Register in Approval Gate
           const pending = approvalGate.registerPendingTx(chain as SupportedChain, fromAddress, builtTx);
@@ -501,16 +786,18 @@ export function createMcpServer(): Server {
                   {
                     status: 'PENDING_HUMAN_APPROVAL',
                     networkMode: mode,
+                    simulation: simSummary,
                     notice:
                       mode === 'mainnet'
                         ? '⚠️ MAINNET GUARD: Transaction formulated for MAINNET (REAL FUNDS). Paused awaiting human approval.'
-                        : 'Safety Guard Active: Transaction built successfully but paused awaiting approval.',
+                        : 'Safety Guard Active: Transaction built and simulated successfully. Paused awaiting approval.',
                     pendingTxId: pending.id,
                     chain: pending.chain,
                     from: pending.fromAddress,
                     to: pending.toAddress,
                     amount: pending.amount,
                     estimatedFee: pending.estimatedFee,
+                    agentReason: agentReason || 'Agent Proposed Operation',
                     summary: pending.summary,
                     approvalInstruction: `To broadcast, invoke sign_and_send_transaction with pendingTxId: "${pending.id}" and approvalPassword.`,
                   },
@@ -543,6 +830,20 @@ export function createMcpServer(): Server {
           }
 
           const broadcastResult = await approvalGate.executeTransaction(pendingTxId, password);
+
+          // Log in History & Record Policy spend
+          PolicyEngine.recordSpend(broadcastResult.chain, broadcastResult.amount);
+          HistoryManager.logTransaction({
+            type: 'send',
+            chain: broadcastResult.chain,
+            networkMode: mode,
+            toAddress: broadcastResult.recipient,
+            amount: broadcastResult.amount,
+            txHash: broadcastResult.txHash,
+            explorerUrl: broadcastResult.explorerUrl,
+            status: 'submitted',
+            agentMemo: 'AI Agent Executed Broadcast',
+          });
 
           return {
             content: [

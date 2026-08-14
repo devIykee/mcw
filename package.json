@@ -1,8 +1,9 @@
 {
   "name": "@deviykee/mcw",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Multi-Chain CLI Wallet (MCW) & Agentic Framework for Humans and AI Agents (MCP)",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "mcw": "dist/index.js",
     "mc-wallet": "dist/index.js",

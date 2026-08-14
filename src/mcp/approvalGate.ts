@@ -17,7 +17,7 @@ export interface PendingTransaction {
   status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 }
 
-class ApprovalGateManager {
+export class ApprovalGateManager {
   private pendingTxs: Map<string, PendingTransaction> = new Map();
   private sessionDecryptedMnemonic: string | null = null;
   private sessionExpiresAt: number = 0;
