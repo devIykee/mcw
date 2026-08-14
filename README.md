@@ -98,13 +98,10 @@ mcw token balance
 mcw token balance usdc-eth
 mcw token balance usdt-trx
 
-# 4. Add any custom token contract (ERC-20, SPL, or TRC-20)
-mcw token add
-# Launches interactive wizard:
-# - Select Chain (ETH, TRX, SOL, or custom EVM L2)
-# - Enter Contract Address / Mint (e.g. TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs)
-# - Enter Symbol (e.g. USDT, DAI, PEPE)
-# - Enter Decimals (e.g. 6 or 18)
+# 4. Add any custom token contract (Auto-Detects Chain, Symbol, Name & Decimals on-chain!)
+mcw token add 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238   # Instant ERC-20 auto-detection (Sepolia USDC)
+mcw token add TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs           # Instant TRC-20 auto-detection (Tron Shasta USDT)
+mcw token add                                              # Or launch interactive wizard
 
 # 5. Send tokens on-chain with password authorization
 mcw token send                                  # Interactive mode

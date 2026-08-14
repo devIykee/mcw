@@ -101,7 +101,29 @@ mcw config tron nile
 
 ---
 
-### 6. Configure Custom RPC Endpoints
+### 6. Multi-Chain Token Management (ERC-20, SPL, TRC-20)
+Agents can auto-detect and track tokens on-chain with 0 manual inputs:
+```bash
+# 1. Auto-detect & track any token contract (Auto-fetches symbol, name, decimals on-chain)
+mcw token add 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238   # Sepolia USDC (ERC-20)
+mcw token add TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs           # Shasta USDT (TRC-20)
+
+# 2. Query live token balances
+mcw token balance
+mcw token balance usdc-eth
+mcw token balance usdt-trx
+
+# 3. Transfer tokens
+mcw token send usdc-eth 10 0xRecipient...
+mcw token send usdt-trx 50 TRecipient...
+```
+*Or via MCP:*
+- `add_token(contractAddress: "0x...")` (Auto-detects chain & metadata)
+- `get_token_balance(token: "USDC" | "0x...")`
+
+---
+
+### 7. Configure Custom RPC Endpoints
 Configure custom RPC endpoints (e.g. Alchemy, QuickNode, local validator):
 ```bash
 mcw config set-rpc eth https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
@@ -111,7 +133,7 @@ mcw config list
 
 ---
 
-### 7. Formulate and Propose a Transaction
+### 8. Formulate and Propose a Transaction
 To send funds safely, the agent builds the transaction and presents the summary for human approval:
 ```bash
 mcw send <chain> <amount> <recipient_address>
