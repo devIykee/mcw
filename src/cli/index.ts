@@ -13,6 +13,8 @@ import { swapCommand } from './commands/swap.js';
 import { policyCommand } from './commands/policy.js';
 import { historyCommand } from './commands/history.js';
 import { safeCommand } from './commands/safe.js';
+import { accountCommand } from './commands/account.js';
+import { walletCommand } from './commands/wallet.js';
 import { mcpDaemonCommand } from './commands/mcpDaemon.js';
 
 function getPackageVersion(): string {
@@ -20,10 +22,10 @@ function getPackageVersion(): string {
     const pkgPath = path.join(__dirname, '../../package.json');
     if (fs.existsSync(pkgPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      return pkg.version || '1.1.0';
+      return pkg.version || '1.2.0';
     }
   } catch {}
-  return '1.1.0';
+  return '1.2.0';
 }
 
 export function setupCli(): Command {
@@ -38,6 +40,8 @@ export function setupCli(): Command {
       `
 Examples:
   $ mcw init                     Initialize or restore a multi-chain wallet
+  $ mcw account                  Manage BIP-44 sub-accounts derived from your seed (Account #0, #1, #2)
+  $ mcw wallet                   Manage multiple independent seed phrases / wallet profiles
   $ mcw balance                  View native balances across BTC, ETH, SOL, TRX & Custom Chains
   $ mcw token balance            View balances for all tracked tokens (USDC, USDT, LINK, etc.)
   $ mcw token add <contract>     Auto-detect and track any token from smart contract on-chain
@@ -55,6 +59,48 @@ Examples:
     .action(async () => {
       printBanner();
       await initCommand();
+    });
+
+  program
+    .command('account')
+    .description('Manage HD sub-accounts derived from your BIP-39 seed phrase (Account #0, #1, #2...)')
+    .argument('[action]', 'Action to perform (list | create | switch)')
+    .argument('[arg1]', 'Account label (for create) or account index (for switch)')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ mcw account                  Open interactive HD sub-account menu
+  $ mcw account list             List all derived sub-accounts and their multi-chain addresses
+  $ mcw account create "Bot 1"   Derive a new sub-account from current seed
+  $ mcw account switch 1         Switch active account index to #1
+`
+    )
+    .action(async (action, arg1) => {
+      printBanner();
+      await accountCommand(action, arg1);
+    });
+
+  program
+    .command('wallet')
+    .description('Manage multiple independent seed phrases and wallet vault profiles')
+    .argument('[action]', 'Action to perform (list | create | import | switch | delete)')
+    .argument('[walletName]', 'Target wallet profile name (e.g. trading-bot, personal)')
+    .addHelpText(
+      'after',
+      `
+Examples:
+  $ mcw wallet                   Open interactive wallet profiles menu
+  $ mcw wallet list              List all configured wallet profiles
+  $ mcw wallet create bot-vault  Generate a fresh seed phrase in a new profile
+  $ mcw wallet import personal   Import an existing seed phrase into a new profile
+  $ mcw wallet switch bot-vault  Switch active wallet profile
+  $ mcw wallet delete old-vault  Delete an unwanted wallet profile
+`
+    )
+    .action(async (action, walletName) => {
+      printBanner();
+      await walletCommand(action, walletName);
     });
 
   program
@@ -94,15 +140,6 @@ Examples:
     .argument('[fromToken]', 'Token to sell (e.g. ETH, SOL, USDC)')
     .argument('[toToken]', 'Token to buy (e.g. USDC, LINK, USDT)')
     .argument('[chain]', 'Target chain (eth, sol)')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw swap                     Launch interactive DEX swap wizard
-  $ mcw swap 0.1 ETH USDC        Swap 0.1 ETH for USDC on Ethereum / Sepolia (Uniswap V3)
-  $ mcw swap 0.5 SOL USDC sol    Swap 0.5 SOL for USDC on Solana (Jupiter Aggregator)
-`
-    )
     .action(async (amount, fromToken, toToken, chain) => {
       printBanner();
       await swapCommand(amount, fromToken, toToken, chain);
@@ -115,18 +152,6 @@ Examples:
     .argument('[chain]', 'Chain (eth, sol, btc, trx)')
     .argument('[val1]', 'Max spend per tx, or address')
     .argument('[val2]', 'Daily rolling spend limit')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw policy                   Interactive policy guardrails menu
-  $ mcw policy list              View all spend limits, whitelists, and blacklists
-  $ mcw policy set-limit eth 0.5 2.0  Set ETH limits: max 0.5/tx, max 2.0 daily
-  $ mcw policy whitelist eth 0x123... Add trusted address to Whitelist
-  $ mcw policy blacklist eth 0xScam.. Add malicious address to Blacklist
-  $ mcw policy toggle            Enable or disable policy enforcement
-`
-    )
     .action(async (action, chain, val1, val2) => {
       printBanner();
       await policyCommand(action, chain, val1, val2);
@@ -137,15 +162,6 @@ Examples:
     .description('View local audit logs, agent transaction memory, and past broadcasts')
     .argument('[chain]', 'Optional chain filter (eth, sol, btc, trx)')
     .argument('[limit]', 'Maximum entries to display (default: 15)')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw history                  View recent transaction audit logs
-  $ mcw history eth              View Ethereum transaction history
-  $ mcw history 5                Show last 5 transactions
-`
-    )
     .action(async (chain, limit) => {
       printBanner();
       await historyCommand(chain, limit);
@@ -159,14 +175,6 @@ Examples:
     .argument('[to]', 'Destination recipient address')
     .argument('[amount]', 'Amount in ETH')
     .argument('[data]', 'Optional calldata hex')
-    .addHelpText(
-      'after',
-      `
-Examples:
-  $ mcw safe                     Interactive Safe multisig proposal wizard
-  $ mcw safe propose 0xSafe... 0xRecipient... 0.1  Propose 0.1 ETH transfer for multisig approval
-`
-    )
     .action(async (action, safeAddress, to, amount, data) => {
       printBanner();
       await safeCommand(action, safeAddress, to, amount, data);

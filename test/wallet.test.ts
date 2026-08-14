@@ -8,7 +8,7 @@ import { PolicyEngine } from '../src/policy/policyEngine.js';
 import { DexSwapper } from '../src/dex/swapper.js';
 import { SafeManager } from '../src/safe/safeManager.js';
 import { HistoryManager } from '../src/history/historyManager.js';
-import { McwWallet } from '../src/sdk/index.js';
+import { McwWallet, listWallets, initializeVault } from '../src/sdk/index.js';
 
 async function runTests() {
   console.log('🧪 Starting MCW Complete Test Suite...\n');
@@ -29,7 +29,7 @@ async function runTests() {
   const testMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
   
   // Testnet Derivations
-  const testnetKeys = deriveAllKeys(testMnemonic, undefined, 'testnet');
+  const testnetKeys = deriveAllKeys(testMnemonic, undefined, 'testnet', 0);
   assert.ok(testnetKeys.btc.address.startsWith('tb1q'), `BTC Testnet address (${testnetKeys.btc.address}) should start with tb1q`);
   assert.strictEqual(testnetKeys.btc.derivationPath, "m/84'/1'/0'/0/0");
   assert.ok(testnetKeys.eth.address.startsWith('0x') && testnetKeys.eth.address.length === 42);
@@ -39,7 +39,7 @@ async function runTests() {
   assert.ok(testnetKeys.trx.address.startsWith('T') && testnetKeys.trx.address.length === 34);
 
   // Mainnet Derivations
-  const mainnetKeys = deriveAllKeys(testMnemonic, undefined, 'mainnet');
+  const mainnetKeys = deriveAllKeys(testMnemonic, undefined, 'mainnet', 0);
   assert.ok(mainnetKeys.btc.address.startsWith('bc1q'), `BTC Mainnet address (${mainnetKeys.btc.address}) should start with bc1q`);
   assert.strictEqual(mainnetKeys.btc.derivationPath, "m/84'/0'/0'/0/0");
   assert.strictEqual(mainnetKeys.eth.address, testnetKeys.eth.address);
@@ -124,23 +124,63 @@ async function runTests() {
   assert.ok(history.length > 0);
   console.log(`  ✅ Audit log verified (Found ${history.length} logged entries).`);
 
-  // Test 9: Programmatic SDK (McwWallet)
-  console.log('\n▶ Test 9: Programmatic McwWallet SDK');
-  const wallet = new McwWallet(testMnemonic, 'testnet');
-  const addresses = wallet.getAddresses();
-  assert.strictEqual(addresses.eth, testnetKeys.eth.address);
-  assert.strictEqual(addresses.btc, testnetKeys.btc.address);
-  assert.strictEqual(addresses.sol, testnetKeys.sol.address);
-  assert.strictEqual(addresses.trx, testnetKeys.trx.address);
-  console.log('  ✅ Programmatic SDK derived multi-chain addresses successfully.');
+  // Test 9: Multi-Account HD Derivation (Accounts 0, 1, 2)
+  console.log('\n▶ Test 9: Multi-Account HD Derivation (1 Seed -> Multiple Accounts)');
+  const acc0 = deriveAllKeys(testMnemonic, undefined, 'testnet', 0);
+  const acc1 = deriveAllKeys(testMnemonic, undefined, 'testnet', 1);
+  const acc2 = deriveAllKeys(testMnemonic, undefined, 'testnet', 2);
 
-  // Test 10: MCP Server instance
-  console.log('\n▶ Test 10: MCP Server & All Tools Schema');
+  assert.notStrictEqual(acc0.eth.address, acc1.eth.address, 'Account 0 and 1 ETH addresses must differ');
+  assert.notStrictEqual(acc1.eth.address, acc2.eth.address, 'Account 1 and 2 ETH addresses must differ');
+  assert.notStrictEqual(acc0.sol.address, acc1.sol.address, 'Account 0 and 1 SOL addresses must differ');
+  assert.notStrictEqual(acc0.btc.address, acc1.btc.address, 'Account 0 and 1 BTC addresses must differ');
+  assert.notStrictEqual(acc0.trx.address, acc1.trx.address, 'Account 0 and 1 TRX addresses must differ');
+
+  assert.strictEqual(acc1.eth.derivationPath, "m/44'/60'/0'/0/1");
+  assert.strictEqual(acc1.sol.derivationPath, "m/44'/501'/1'/0'");
+  assert.strictEqual(acc2.btc.derivationPath, "m/84'/1'/0'/0/2");
+
+  console.log('  ✅ HD Sub-Accounts derived distinct keys across all chains:');
+  console.log(`     • Account #0 ETH: ${acc0.eth.address}`);
+  console.log(`     • Account #1 ETH: ${acc1.eth.address}`);
+  console.log(`     • Account #2 ETH: ${acc2.eth.address}`);
+
+  // Test 10: Multi-Wallet Profile Vaults
+  console.log('\n▶ Test 10: Multi-Wallet Profile Vaults (Multiple Seeds)');
+  const botMnemonic = generateMnemonic(128);
+  const botKeys = deriveAllKeys(botMnemonic, undefined, 'testnet', 0);
+  initializeVault(
+    botMnemonic,
+    'BotPassword123!',
+    {
+      btc: botKeys.btc.address,
+      eth: botKeys.eth.address,
+      sol: botKeys.sol.address,
+      trx: botKeys.trx.address,
+    },
+    'test-bot-profile'
+  );
+
+  const wallets = listWallets();
+  assert.ok(wallets.some((w) => w.name === 'test-bot-profile'));
+  console.log(`  ✅ Multi-wallet profiles managed successfully (Total profiles: ${wallets.length}).`);
+
+  // Test 11: Programmatic McwWallet SDK with Account Indexing
+  console.log('\n▶ Test 11: Programmatic McwWallet SDK with Multi-Account Indexing');
+  const wallet = new McwWallet(testMnemonic, 'testnet', 0);
+  const addrs0 = wallet.getAddresses(0);
+  const addrs1 = wallet.getAddresses(1);
+  assert.strictEqual(addrs0.eth, acc0.eth.address);
+  assert.strictEqual(addrs1.eth, acc1.eth.address);
+  console.log('  ✅ Programmatic SDK derived sub-account addresses successfully.');
+
+  // Test 12: MCP Server instance
+  console.log('\n▶ Test 12: MCP Server & All Tools Schema');
   const mcpServer = createMcpServer();
   assert.ok(mcpServer, 'MCP server instance must be created');
-  console.log('  ✅ MCP Server initialized with all 15 agent tools.');
+  console.log('  ✅ MCP Server initialized with all 21 agent tools.');
 
-  console.log('\n🎉 ALL 10 TEST SUITES PASSED PERFECTLY!\n');
+  console.log('\n🎉 ALL 12 TEST SUITES PASSED PERFECTLY!\n');
 }
 
 runTests().catch((err) => {

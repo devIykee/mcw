@@ -38,16 +38,42 @@ The agent has two seamless modes of operation:
 
 ## 📋 Common Agent Workflows & Commands
 
-### 1. Check Wallet Addresses
-Fetch all public addresses for the active environment:
+### 1. Check Wallet Addresses & Sub-Accounts
+Fetch public addresses for the active account:
 ```bash
+# Query active account addresses
 mcw balance
+
+# List all HD sub-accounts derived from seed (Account #0, #1, #2)
+mcw account list
+
+# Derive a new sub-account with custom label
+mcw account create "Trading Agent"
+
+# Switch active account index
+mcw account switch 1
 ```
-*Or via MCP:* `get_addresses`
+*Or via MCP:* `get_addresses(accountIndex?)`, `list_accounts`, `create_account`, `switch_account`
 
 ---
 
-### 2. Query Live Balances
+### 2. Multi-Seed Profile Vaults
+Manage multiple independent seed phrases:
+```bash
+# List all wallet profiles
+mcw wallet list
+
+# Create a new isolated wallet profile
+mcw wallet create bot-profile
+
+# Switch active wallet profile
+mcw wallet switch bot-profile
+```
+*Or via MCP:* `list_wallets`, `create_wallet`, `switch_wallet`
+
+---
+
+### 3. Query Live Balances
 Check balances across all 4 chains or a specific target chain:
 ```bash
 # Query all chains
@@ -59,7 +85,7 @@ mcw balance sol
 mcw balance btc
 mcw balance trx
 ```
-*Or via MCP:* `get_balance(chain?: "btc" | "eth" | "sol" | "trx")`
+*Or via MCP:* `get_balance(chain?: "btc" | "eth" | "sol" | "trx", accountIndex?: number)`
 
 ---
 

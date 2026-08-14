@@ -1,6 +1,23 @@
 import { deriveAllKeys, DerivedKeyInfo, generateMnemonic, validateMnemonic } from '../crypto/keyDerivation.js';
 import { encryptData, decryptData, EncryptedPayload } from '../crypto/cipher.js';
-import { walletExists, saveVaultFile, loadVaultFile, unlockVault, getWalletAddress } from '../crypto/storage.js';
+import {
+  walletExists,
+  saveVaultFile,
+  loadVaultFile,
+  unlockVault,
+  getWalletAddress,
+  listAccounts,
+  createAccount,
+  getActiveAccountIndex,
+  setActiveAccountIndex,
+  listWallets,
+  getActiveWalletName,
+  setActiveWalletName,
+  initializeVault,
+  deleteWallet,
+  WalletAccount,
+  WalletVaultFile,
+} from '../crypto/storage.js';
 import { getChainAdapter, EthereumAdapter, TronAdapter, SolanaAdapter, BitcoinAdapter } from '../adapters/index.js';
 import { NetworkMode, getNetworkMode, setNetworkMode, getChainConfig, getAllChains } from '../config/chains.js';
 import { getAllTokens, findToken, saveCustomToken, TokenConfig } from '../config/tokens.js';
@@ -14,18 +31,21 @@ import { approvalGate, ApprovalGateManager, PendingTransaction } from '../mcp/ap
 export class McwWallet {
   private mnemonic?: string;
   private networkMode: NetworkMode;
+  private accountIndex: number;
 
-  constructor(mnemonic?: string, mode?: NetworkMode) {
+  constructor(mnemonic?: string, mode?: NetworkMode, accountIndex: number = 0) {
     this.mnemonic = mnemonic;
     this.networkMode = mode || getNetworkMode();
+    this.accountIndex = accountIndex;
   }
 
   /**
-   * Derive addresses for all chains
+   * Derive addresses for all chains (Optionally override accountIndex)
    */
-  getAddresses(): Record<string, string> {
+  getAddresses(accountIndex?: number): Record<string, string> {
+    const targetIdx = accountIndex !== undefined ? accountIndex : this.accountIndex;
     if (this.mnemonic) {
-      const keys = deriveAllKeys(this.mnemonic, undefined, this.networkMode);
+      const keys = deriveAllKeys(this.mnemonic, undefined, this.networkMode, targetIdx);
       return {
         btc: keys.btc.address,
         eth: keys.eth.address,
@@ -34,31 +54,33 @@ export class McwWallet {
       };
     }
     return {
-      btc: getWalletAddress('btc', this.networkMode),
-      eth: getWalletAddress('eth', this.networkMode),
-      sol: getWalletAddress('sol', this.networkMode),
-      trx: getWalletAddress('trx', this.networkMode),
+      btc: getWalletAddress('btc', this.networkMode, targetIdx),
+      eth: getWalletAddress('eth', this.networkMode, targetIdx),
+      sol: getWalletAddress('sol', this.networkMode, targetIdx),
+      trx: getWalletAddress('trx', this.networkMode, targetIdx),
     };
   }
 
   /**
    * Get balance for a chain
    */
-  async getBalance(chain: string) {
+  async getBalance(chain: string, accountIndex?: number) {
+    const targetIdx = accountIndex !== undefined ? accountIndex : this.accountIndex;
     const adapter = getChainAdapter(chain, this.networkMode);
-    const addr = this.getAddresses()[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode);
+    const addr = this.getAddresses(targetIdx)[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode, targetIdx);
     return adapter.getBalance(addr);
   }
 
   /**
    * Get token balance
    */
-  async getTokenBalance(tokenSymbolOrAddress: string, chain: string = 'eth') {
+  async getTokenBalance(tokenSymbolOrAddress: string, chain: string = 'eth', accountIndex?: number) {
+    const targetIdx = accountIndex !== undefined ? accountIndex : this.accountIndex;
     const adapter = getChainAdapter(chain, this.networkMode);
     const token = findToken(tokenSymbolOrAddress, this.networkMode, chain);
     const contract = token ? token.contractAddress : tokenSymbolOrAddress;
     const decimals = token ? token.decimals : 18;
-    const walletAddr = this.getAddresses()[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode);
+    const walletAddr = this.getAddresses(targetIdx)[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode, targetIdx);
 
     if (adapter instanceof EthereumAdapter) {
       return adapter.getERC20Balance(contract, walletAddr, decimals);
@@ -75,8 +97,9 @@ export class McwWallet {
   /**
    * Simulate a transaction
    */
-  async simulate(chain: string, to: string, amount: string, data: string = '0x'): Promise<SimulationResult> {
-    const from = this.getAddresses()[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode);
+  async simulate(chain: string, to: string, amount: string, data: string = '0x', accountIndex?: number): Promise<SimulationResult> {
+    const targetIdx = accountIndex !== undefined ? accountIndex : this.accountIndex;
+    const from = this.getAddresses(targetIdx)[chain.toLowerCase()] || getWalletAddress(chain, this.networkMode, targetIdx);
     if (chain === 'sol') {
       return TransactionSimulator.simulateSolana(this.networkMode, from, to, amount);
     }
@@ -103,6 +126,20 @@ export class McwWallet {
   getHistory(limit: number = 20): HistoryEntry[] {
     return HistoryManager.getHistory({ networkMode: this.networkMode, limit });
   }
+
+  /**
+   * List sub-accounts under this wallet
+   */
+  listAccounts(): WalletAccount[] {
+    return listAccounts();
+  }
+
+  /**
+   * Derive a new sub-account
+   */
+  createAccount(password: string, label?: string): WalletAccount {
+    return createAccount(password, label);
+  }
 }
 
 export {
@@ -116,6 +153,15 @@ export {
   loadVaultFile,
   unlockVault,
   getWalletAddress,
+  listAccounts,
+  createAccount,
+  getActiveAccountIndex,
+  setActiveAccountIndex,
+  listWallets,
+  getActiveWalletName,
+  setActiveWalletName,
+  initializeVault,
+  deleteWallet,
   getChainAdapter,
   EthereumAdapter,
   TronAdapter,

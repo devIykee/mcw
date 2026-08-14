@@ -6,7 +6,19 @@ import {
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
-import { loadVaultFile, walletExists, getWalletAddress } from '../crypto/storage.js';
+import {
+  loadVaultFile,
+  walletExists,
+  getWalletAddress,
+  listAccounts,
+  createAccount,
+  getActiveAccountIndex,
+  setActiveAccountIndex,
+  listWallets,
+  getActiveWalletName,
+  setActiveWalletName,
+  initializeVault,
+} from '../crypto/storage.js';
 import { getChainAdapter, EthereumAdapter, TronAdapter, SolanaAdapter } from '../adapters/index.js';
 import { SupportedChain, getChainConfig, getNetworkMode, setNetworkMode, NetworkMode, getAllChains } from '../config/chains.js';
 import { getAllTokens, findToken, saveCustomToken, TokenConfig } from '../config/tokens.js';
@@ -17,12 +29,13 @@ import { TransactionSimulator } from '../simulation/simulator.js';
 import { HistoryManager } from '../history/historyManager.js';
 import { DexSwapper } from '../dex/swapper.js';
 import { SafeManager } from '../safe/safeManager.js';
+import { generateMnemonic, deriveAllKeys } from '../crypto/keyDerivation.js';
 
 export function createMcpServer(): Server {
   const server = new Server(
     {
       name: 'mcw-mcp-server',
-      version: '1.1.0',
+      version: '1.2.0',
     },
     {
       capabilities: {
@@ -63,10 +76,95 @@ export function createMcpServer(): Server {
         {
           name: 'get_addresses',
           description:
-            'Retrieve public addresses for all supported blockchains (Bitcoin, Ethereum, Solana, Tron) for the current network mode.',
+            'Retrieve public addresses for all supported blockchains (Bitcoin, Ethereum, Solana, Tron) for the current active account.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              accountIndex: {
+                type: 'number',
+                description: 'Optional HD account index override (default: active account)',
+              },
+            },
+          },
+        },
+        {
+          name: 'list_accounts',
+          description: 'List all BIP-44 HD sub-accounts derived from the current seed phrase.',
           inputSchema: {
             type: 'object',
             properties: {},
+          },
+        },
+        {
+          name: 'create_account',
+          description: 'Derive a new HD sub-account from the current seed phrase (e.g. Account #1, #2). Requires vault password.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              label: {
+                type: 'string',
+                description: 'Label or purpose description for the new account',
+              },
+              password: {
+                type: 'string',
+                description: 'Vault master password to authorize derivation',
+              },
+            },
+            required: ['password'],
+          },
+        },
+        {
+          name: 'switch_account',
+          description: 'Switch the active HD account index.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              accountIndex: {
+                type: 'number',
+                description: 'The account index to switch to (e.g. 0, 1, 2)',
+              },
+            },
+            required: ['accountIndex'],
+          },
+        },
+        {
+          name: 'list_wallets',
+          description: 'List all independent seed phrase wallet profiles.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'create_wallet',
+          description: 'Create a new independent wallet profile with a freshly generated BIP-39 seed phrase.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              walletName: {
+                type: 'string',
+                description: 'Unique name for the wallet profile (e.g. "trading-bot", "client-vault")',
+              },
+              password: {
+                type: 'string',
+                description: 'Password to encrypt the new wallet vault',
+              },
+            },
+            required: ['walletName', 'password'],
+          },
+        },
+        {
+          name: 'switch_wallet',
+          description: 'Switch the active wallet profile.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              walletName: {
+                type: 'string',
+                description: 'The wallet profile name to activate',
+              },
+            },
+            required: ['walletName'],
           },
         },
         {
@@ -79,6 +177,10 @@ export function createMcpServer(): Server {
               chain: {
                 type: 'string',
                 description: 'The target chain (e.g. btc, eth, sol, trx, or custom chain). If omitted, returns balances for all chains.',
+              },
+              accountIndex: {
+                type: 'number',
+                description: 'Optional HD account index override',
               },
             },
           },
@@ -97,6 +199,10 @@ export function createMcpServer(): Server {
               chain: {
                 type: 'string',
                 description: 'Optional blockchain name (eth, trx, sol, or custom EVM chain)',
+              },
+              accountIndex: {
+                type: 'number',
+                description: 'Optional HD account index override',
               },
             },
             required: ['token'],
@@ -393,28 +499,164 @@ export function createMcpServer(): Server {
 
     try {
       switch (name) {
+        case 'list_wallets': {
+          const wallets = listWallets();
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ activeWallet: getActiveWalletName(), wallets }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'create_wallet': {
+          const walletName = args?.walletName as string;
+          const password = args?.password as string;
+          if (!walletName || !password) {
+            throw new McpError(ErrorCode.InvalidParams, 'walletName and password are required.');
+          }
+
+          const mnemonic = generateMnemonic(128);
+          const testnetKeys = deriveAllKeys(mnemonic, undefined, 'testnet', 0);
+          const mainnetKeys = deriveAllKeys(mnemonic, undefined, 'mainnet', 0);
+
+          initializeVault(
+            mnemonic,
+            password,
+            {
+              btc: testnetKeys.btc.address,
+              btcMainnet: mainnetKeys.btc.address,
+              eth: testnetKeys.eth.address,
+              sol: testnetKeys.sol.address,
+              trx: testnetKeys.trx.address,
+            },
+            walletName
+          );
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    walletName,
+                    status: 'ACTIVE',
+                    addresses: {
+                      eth: testnetKeys.eth.address,
+                      sol: testnetKeys.sol.address,
+                      btc: testnetKeys.btc.address,
+                      trx: testnetKeys.trx.address,
+                    },
+                    mnemonicNotice: 'Wallet initialized and encrypted in local vault.',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'switch_wallet': {
+          const walletName = args?.walletName as string;
+          if (!walletName) {
+            throw new McpError(ErrorCode.InvalidParams, 'walletName is required.');
+          }
+          if (!walletExists(walletName)) {
+            throw new McpError(ErrorCode.InvalidParams, `Wallet profile '${walletName}' does not exist.`);
+          }
+          setActiveWalletName(walletName);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ success: true, activeWallet: walletName }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'list_accounts': {
+          const accounts = listAccounts();
+          const activeIndex = getActiveAccountIndex();
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ activeWallet: getActiveWalletName(), activeAccountIndex: activeIndex, accounts }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'create_account': {
+          const password = args?.password as string;
+          const label = args?.label as string | undefined;
+          if (!password) {
+            throw new McpError(ErrorCode.InvalidParams, 'password is required to authorize derivation.');
+          }
+          const newAccount = createAccount(password, label);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ success: true, createdAccount: newAccount }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'switch_account': {
+          const accountIndex = args?.accountIndex as number;
+          if (typeof accountIndex !== 'number') {
+            throw new McpError(ErrorCode.InvalidParams, 'accountIndex number is required.');
+          }
+          const accounts = listAccounts();
+          const exists = accounts.some((a) => a.index === accountIndex);
+          if (!exists) {
+            throw new McpError(ErrorCode.InvalidParams, `Account index #${accountIndex} does not exist in active wallet.`);
+          }
+          setActiveAccountIndex(accountIndex);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ success: true, activeAccountIndex: accountIndex }, null, 2),
+              },
+            ],
+          };
+        }
+
         case 'get_addresses': {
+          const accIdx = args?.accountIndex as number | undefined;
+          const activeIdx = accIdx !== undefined ? accIdx : getActiveAccountIndex();
+
           const addresses = {
+            walletName: getActiveWalletName(),
+            accountIndex: activeIdx,
             networkMode: mode,
             bitcoin: {
-              address: getWalletAddress('btc', mode),
+              address: getWalletAddress('btc', mode, activeIdx),
               network: getChainConfig('btc', mode).networkName,
-              derivationPath: getChainConfig('btc', mode).derivationPath,
+              derivationPath: `m/84'/${mode === 'mainnet' ? "0'" : "1'"}/0'/0/${activeIdx}`,
             },
             ethereum: {
-              address: getWalletAddress('eth', mode),
+              address: getWalletAddress('eth', mode, activeIdx),
               network: getChainConfig('eth', mode).networkName,
-              derivationPath: getChainConfig('eth', mode).derivationPath,
+              derivationPath: `m/44'/60'/0'/0/${activeIdx}`,
             },
             solana: {
-              address: getWalletAddress('sol', mode),
+              address: getWalletAddress('sol', mode, activeIdx),
               network: getChainConfig('sol', mode).networkName,
-              derivationPath: getChainConfig('sol', mode).derivationPath,
+              derivationPath: `m/44'/501'/${activeIdx}'/0'`,
             },
             tron: {
-              address: getWalletAddress('trx', mode),
+              address: getWalletAddress('trx', mode, activeIdx),
               network: getChainConfig('trx', mode).networkName,
-              derivationPath: getChainConfig('trx', mode).derivationPath,
+              derivationPath: `m/44'/195'/0'/0/${activeIdx}`,
             },
           };
 
@@ -430,14 +672,17 @@ export function createMcpServer(): Server {
 
         case 'get_balance': {
           const chain = (args?.chain as string) || undefined;
+          const accIdx = args?.accountIndex as number | undefined;
+          const activeIdx = accIdx !== undefined ? accIdx : getActiveAccountIndex();
+
           const chainsToQuery = chain ? [chain] : getAllChains(mode);
           const results = [];
 
           for (const c of chainsToQuery) {
             const adapter = getChainAdapter(c, mode);
-            const address = getWalletAddress(c, mode);
+            const address = getWalletAddress(c, mode, activeIdx);
             const bal = await adapter.getBalance(address);
-            results.push(bal);
+            results.push({ ...bal, accountIndex: activeIdx });
           }
 
           return {
@@ -452,6 +697,9 @@ export function createMcpServer(): Server {
 
         case 'get_token_balance': {
           const tokenSearch = args?.token as string;
+          const accIdx = args?.accountIndex as number | undefined;
+          const activeIdx = accIdx !== undefined ? accIdx : getActiveAccountIndex();
+
           let chain = args?.chain as string | undefined;
           if (!tokenSearch) {
             throw new McpError(ErrorCode.InvalidParams, 'token parameter is required.');
@@ -465,7 +713,7 @@ export function createMcpServer(): Server {
           const decimals = token ? token.decimals : 18;
 
           const adapter = getChainAdapter(chain, mode);
-          const walletAddr = getWalletAddress(chain, mode);
+          const walletAddr = getWalletAddress(chain, mode, activeIdx);
 
           let balResult;
           if (adapter instanceof EthereumAdapter) {
