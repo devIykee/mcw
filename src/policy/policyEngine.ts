@@ -75,11 +75,12 @@ export class PolicyEngine {
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
     const violations: string[] = [];
 
+    const isMatch = (addr1: string, addr2: string) =>
+      chain.toLowerCase() === 'sol' ? addr1 === addr2 : addr1.toLowerCase() === addr2.toLowerCase();
+
     // 1. Blacklist check
     if (chainPolicy.blacklistAddresses && chainPolicy.blacklistAddresses.length > 0) {
-      const isBlacklisted = chainPolicy.blacklistAddresses.some(
-        (b) => b.toLowerCase() === recipient.toLowerCase()
-      );
+      const isBlacklisted = chainPolicy.blacklistAddresses.some((b) => isMatch(b, recipient));
       if (isBlacklisted) {
         violations.push(`Recipient ${recipient} is on the security BLACKLIST.`);
       }
@@ -87,9 +88,7 @@ export class PolicyEngine {
 
     // 2. Whitelist check (Strict mode or whitelist set)
     if (chainPolicy.whitelistAddresses && chainPolicy.whitelistAddresses.length > 0) {
-      const isWhitelisted = chainPolicy.whitelistAddresses.some(
-        (w) => w.toLowerCase() === recipient.toLowerCase()
-      );
+      const isWhitelisted = chainPolicy.whitelistAddresses.some((w) => isMatch(w, recipient));
       if (!isWhitelisted) {
         violations.push(`Recipient ${recipient} is not on the approved WHITELIST.`);
       }
