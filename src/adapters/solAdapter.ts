@@ -18,6 +18,17 @@ import {
 } from './base.js';
 import { getChainConfig, NetworkMode } from '../config/chains.js';
 
+export interface SolTokenBalanceResult {
+  symbol: string;
+  name?: string;
+  contractAddress: string;
+  walletAddress: string;
+  balanceFormatted: string;
+  balanceRaw: string;
+  decimals: number;
+  network: string;
+}
+
 export class SolanaAdapter extends BaseChainAdapter {
   private connection: Connection;
 
@@ -41,6 +52,53 @@ export class SolanaAdapter extends BaseChainAdapter {
       symbol: this.config.symbol,
       network: this.config.networkName
     };
+  }
+
+  /**
+   * Query SPL Token Balance (e.g. USDC on Solana Devnet/Mainnet)
+   */
+  async getSPLBalance(mintAddress: string, walletAddress: string, explicitDecimals: number = 6): Promise<SolTokenBalanceResult> {
+    try {
+      const walletPubkey = new PublicKey(walletAddress);
+      const mintPubkey = new PublicKey(mintAddress);
+
+      const accounts = await this.connection.getParsedTokenAccountsByOwner(walletPubkey, {
+        mint: mintPubkey,
+      });
+
+      let totalAmount = 0;
+      let rawAmount = '0';
+      let decimals = explicitDecimals;
+
+      for (const acc of accounts.value) {
+        const tokenAmount = acc.account.data.parsed.info.tokenAmount;
+        totalAmount += tokenAmount.uiAmount || 0;
+        rawAmount = (BigInt(rawAmount) + BigInt(tokenAmount.amount)).toString();
+        decimals = tokenAmount.decimals;
+      }
+
+      return {
+        symbol: 'USDC',
+        name: 'SPL Token',
+        contractAddress: mintAddress,
+        walletAddress,
+        balanceFormatted: totalAmount.toFixed(4),
+        balanceRaw: rawAmount,
+        decimals,
+        network: this.config.networkName,
+      };
+    } catch (err: any) {
+      return {
+        symbol: 'SPL',
+        name: 'SPL Token',
+        contractAddress: mintAddress,
+        walletAddress,
+        balanceFormatted: '0.0000',
+        balanceRaw: '0',
+        decimals: explicitDecimals,
+        network: this.config.networkName,
+      };
+    }
   }
 
   async buildTransaction(fromAddress: string, payload: TransactionPayload): Promise<BuiltTransaction> {

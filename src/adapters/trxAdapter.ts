@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { ethers } from 'ethers';
+import bs58 from 'bs58';
 import {
   BaseChainAdapter,
   BalanceResult,
@@ -9,6 +10,29 @@ import {
   FaucetResult
 } from './base.js';
 import { getChainConfig, NetworkMode } from '../config/chains.js';
+
+function tronAddressToParam(base58Address: string): string {
+  try {
+    const bytes = bs58.decode(base58Address);
+    const body = bytes.slice(0, bytes.length - 4);
+    const hex = Buffer.from(body).toString('hex');
+    const raw20 = hex.startsWith('41') ? hex.slice(2) : hex;
+    return raw20.padStart(64, '0');
+  } catch {
+    return base58Address.replace(/^0x/, '').padStart(64, '0');
+  }
+}
+
+export interface TronTokenBalanceResult {
+  symbol: string;
+  name?: string;
+  contractAddress: string;
+  walletAddress: string;
+  balanceFormatted: string;
+  balanceRaw: string;
+  decimals: number;
+  network: string;
+}
 
 export class TronAdapter extends BaseChainAdapter {
   private apiBaseUrl: string;
@@ -49,6 +73,95 @@ export class TronAdapter extends BaseChainAdapter {
         network: this.config.networkName
       };
     }
+  }
+
+  /**
+   * Query TRC-20 Token Balance (e.g. USDT on Shasta/Nile/Mainnet)
+   */
+  async getTRC20Balance(tokenContractAddress: string, walletAddress: string, explicitDecimals: number = 6): Promise<TronTokenBalanceResult> {
+    try {
+      const param = tronAddressToParam(walletAddress);
+      const res = await axios.post(
+        `${this.apiBaseUrl}/wallet/triggerconstantcontract`,
+        {
+          owner_address: walletAddress,
+          contract_address: tokenContractAddress,
+          function_selector: 'balanceOf(address)',
+          parameter: param,
+          visible: true,
+        },
+        { timeout: 10000 }
+      );
+
+      let balanceRaw = '0';
+      if (res.data && res.data.constant_result && res.data.constant_result[0]) {
+        const hex = res.data.constant_result[0];
+        balanceRaw = BigInt('0x' + hex).toString();
+      }
+
+      const formatted = (Number(balanceRaw) / Math.pow(10, explicitDecimals)).toFixed(4);
+
+      return {
+        symbol: 'USDT',
+        name: 'TRC-20 Token',
+        contractAddress: tokenContractAddress,
+        walletAddress,
+        balanceFormatted: formatted,
+        balanceRaw,
+        decimals: explicitDecimals,
+        network: this.config.networkName,
+      };
+    } catch (err: any) {
+      return {
+        symbol: 'TRC20',
+        name: 'TRC-20 Token',
+        contractAddress: tokenContractAddress,
+        walletAddress,
+        balanceFormatted: '0.0000',
+        balanceRaw: '0',
+        decimals: explicitDecimals,
+        network: this.config.networkName,
+      };
+    }
+  }
+
+  /**
+   * Build TRC-20 Transfer
+   */
+  async buildTRC20Transfer(
+    fromAddress: string,
+    tokenContractAddress: string,
+    toAddress: string,
+    amount: string,
+    decimals: number = 6
+  ): Promise<BuiltTransaction> {
+    const rawAmount = BigInt(Math.round(parseFloat(amount) * Math.pow(10, decimals))).toString(16).padStart(64, '0');
+    const toParam = tronAddressToParam(toAddress);
+    const parameter = `${toParam}${rawAmount}`;
+
+    const triggerRes = await axios.post(`${this.apiBaseUrl}/wallet/triggersmartcontract`, {
+      owner_address: fromAddress,
+      contract_address: tokenContractAddress,
+      function_selector: 'transfer(address,uint256)',
+      parameter,
+      fee_limit: 15000000, // 15 TRX fee limit
+      visible: true,
+    });
+
+    if (!triggerRes.data || !triggerRes.data.transaction) {
+      throw new Error(`Tron TRC-20 transaction creation failed: ${JSON.stringify(triggerRes.data)}`);
+    }
+
+    const estimatedFee = '15.0 TRX (Max Fee Limit)';
+
+    return {
+      chain: 'trx',
+      to: toAddress,
+      amount,
+      estimatedFee,
+      rawPayload: triggerRes.data.transaction,
+      summary: `Transfer ${amount} TRC-20 tokens to ${toAddress} on ${this.config.networkName} (Contract: ${tokenContractAddress}, Max Fee Limit: ${estimatedFee})`
+    };
   }
 
   async buildTransaction(fromAddress: string, payload: TransactionPayload): Promise<BuiltTransaction> {
@@ -118,7 +231,7 @@ export class TronAdapter extends BaseChainAdapter {
     return {
       chain: 'trx',
       success: true,
-      message: `Tron Nile testnet TRX can be requested via faucet:`,
+      message: `Tron Nile/Shasta testnet TRX can be requested via faucet:`,
       instructionsUrl: `${this.config.faucetUrl}?address=${address}`
     };
   }

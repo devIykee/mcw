@@ -10,13 +10,13 @@ import {
   TokenConfig,
   loadCustomTokens,
 } from '../../config/tokens.js';
-import { getChainAdapter, EthereumAdapter } from '../../adapters/index.js';
+import { getChainAdapter, EthereumAdapter, TronAdapter, SolanaAdapter } from '../../adapters/index.js';
 import { walletExists, getWalletAddress, unlockVault } from '../../crypto/storage.js';
 import { deriveAllKeys } from '../../crypto/keyDerivation.js';
 import { createSpinner } from '../ui.js';
 
 export async function tokenCommand(
-  action?: string,
+  actionArg?: string,
   tokenArg?: string,
   amountArg?: string,
   toArg?: string
@@ -24,6 +24,19 @@ export async function tokenCommand(
   if (!walletExists()) {
     console.log(chalk.red('\n❌ Wallet not initialized. Please run `mcw init` (or `npx @deviykee/mcw init`) first.\n'));
     return;
+  }
+
+  const mode = getNetworkMode();
+  let action = actionArg;
+  let token = tokenArg;
+
+  // Flexible argument handler: if first argument is a token name (e.g. `mcw token usdc-sepolia`)
+  if (actionArg && !['balance', 'add', 'send', 'list', 'remove'].includes(actionArg.toLowerCase())) {
+    const found = findToken(actionArg, mode);
+    if (found) {
+      action = 'balance';
+      token = actionArg;
+    }
   }
 
   // Shortcut: mcw token list
@@ -34,23 +47,29 @@ export async function tokenCommand(
 
   // Shortcut: mcw token balance [token]
   if (action === 'balance') {
-    await fetchTokenBalances(tokenArg);
+    await fetchTokenBalances(token);
     return;
   }
 
   // Shortcut: mcw token send <token> <amount> <to>
   if (action === 'send') {
-    await sendToken(tokenArg, amountArg, toArg);
+    await sendToken(token, amountArg, toArg);
+    return;
+  }
+
+  // Shortcut: mcw token add
+  if (action === 'add') {
+    await addTokenWizard();
     return;
   }
 
   // Shortcut: mcw token remove <id>
-  if (action === 'remove' && tokenArg) {
-    const removed = removeCustomToken(tokenArg);
+  if (action === 'remove' && token) {
+    const removed = removeCustomToken(token);
     if (removed) {
-      console.log(chalk.green(`\n✅ Custom token '${tokenArg}' removed.\n`));
+      console.log(chalk.green(`\n✅ Custom token '${token}' removed.\n`));
     } else {
-      console.log(chalk.yellow(`\n⚠️  Custom token '${tokenArg}' not found.\n`));
+      console.log(chalk.yellow(`\n⚠️  Custom token '${token}' not found.\n`));
     }
     return;
   }
@@ -60,11 +79,11 @@ export async function tokenCommand(
     {
       type: 'list',
       name: 'choice',
-      message: '🪙 Token Management:',
+      message: '🪙 Token Management (ERC-20, SPL, TRC-20):',
       choices: [
-        { name: '💰 View Token Balances (e.g. Sepolia USDC, LINK)', value: 'balance' },
-        { name: '➕ Add Custom ERC-20 / SPL Token Contract', value: 'add' },
-        { name: '📤 Send Tokens', value: 'send' },
+        { name: '💰 View Token Balances (USDC, USDT, LINK, etc.)', value: 'balance' },
+        { name: '➕ Add Custom Token Contract (ERC-20, SPL, or TRC-20)', value: 'add' },
+        { name: '📤 Send / Transfer Tokens', value: 'send' },
         { name: '📋 List Tracked Tokens', value: 'list' },
         { name: '🗑️  Remove a Custom Token', value: 'remove' },
       ],
@@ -91,7 +110,7 @@ export async function tokenCommand(
         name: 'idToDelete',
         message: 'Select token to remove:',
         choices: customTokens.map((t) => ({
-          name: `${t.symbol} - ${t.name} (${t.chain.toUpperCase()}) [${t.contractAddress}]`,
+          name: `${t.symbol} - ${t.name} (${t.chain.toUpperCase()} - ${t.standard.toUpperCase()}) [${t.contractAddress}]`,
           value: t.id,
         })),
       },
@@ -119,30 +138,32 @@ async function addTokenWizard(): Promise<void> {
       type: 'input',
       name: 'contractAddress',
       message: 'Enter Token Contract Address (or Mint Address):',
-      validate: (input: string) => (input.trim().length >= 32 ? true : 'Invalid contract address.'),
+      validate: (input: string) => (input.trim().length >= 32 ? true : 'Invalid contract or mint address.'),
     },
     {
       type: 'input',
       name: 'symbol',
-      message: 'Enter Token Symbol (e.g. "USDC", "DAI", "LINK"):',
+      message: 'Enter Token Symbol (e.g. "USDC", "USDT", "LINK"):',
       validate: (input: string) => (input.trim() ? true : 'Symbol is required.'),
     },
     {
       type: 'input',
       name: 'name',
-      message: 'Enter Token Name (e.g. "USD Coin", "ChainLink Token"):',
+      message: 'Enter Token Name (e.g. "USD Coin", "Tether USD"):',
       default: (ans: any) => `${ans.symbol} Token`,
     },
     {
       type: 'input',
       name: 'decimals',
-      message: 'Enter Decimals (usually 18 for ERC-20, 6 for USDC/USDT):',
-      default: '18',
+      message: 'Enter Decimals (usually 18 for ERC-20, 6 for USDC/USDT/TRC-20):',
+      default: '6',
       validate: (input: string) => (!isNaN(parseInt(input, 10)) ? true : 'Must be an integer.'),
     },
   ]);
 
+  const standard = answers.chain === 'sol' ? 'spl' : answers.chain === 'trx' ? 'trc20' : 'erc20';
   const id = `${answers.symbol.toLowerCase()}-${answers.chain.toLowerCase()}`;
+
   saveCustomToken({
     id,
     symbol: answers.symbol.trim().toUpperCase(),
@@ -151,10 +172,14 @@ async function addTokenWizard(): Promise<void> {
     networkMode: mode,
     contractAddress: answers.contractAddress.trim(),
     decimals: parseInt(answers.decimals, 10),
-    standard: answers.chain === 'sol' ? 'spl' : answers.chain === 'trx' ? 'trc20' : 'erc20',
+    standard,
   });
 
-  console.log(chalk.green(`\n✅ Custom Token '${chalk.bold(answers.symbol)}' added successfully to ${mode.toUpperCase()}!\n`));
+  console.log(
+    chalk.green(
+      `\n✅ Custom Token '${chalk.bold(answers.symbol)}' (${standard.toUpperCase()}) added successfully to ${mode.toUpperCase()}!\n`
+    )
+  );
 }
 
 async function fetchTokenBalances(specificToken?: string): Promise<void> {
@@ -176,13 +201,14 @@ async function fetchTokenBalances(specificToken?: string): Promise<void> {
   }
 
   console.log(chalk.bold.cyan(`\n🪙 Fetching Live ${mode.toUpperCase()} Token Balances...\n`));
-  const spinner = createSpinner('Querying token smart contracts...').start();
+  const spinner = createSpinner('Querying token smart contracts across chains...').start();
 
   const results: Array<{
     symbol: string;
     name: string;
     chain: string;
     network: string;
+    standard: string;
     balance: string;
     contract: string;
   }> = [];
@@ -199,6 +225,29 @@ async function fetchTokenBalances(specificToken?: string): Promise<void> {
           name: token.name,
           chain: token.chain.toUpperCase(),
           network: getChainConfig(token.chain, mode).networkName,
+          standard: 'ERC20',
+          balance: `${bal.balanceFormatted} ${token.symbol}`,
+          contract: token.contractAddress,
+        });
+      } else if (adapter instanceof TronAdapter) {
+        const bal = await adapter.getTRC20Balance(token.contractAddress, walletAddr, token.decimals);
+        results.push({
+          symbol: token.symbol,
+          name: token.name,
+          chain: token.chain.toUpperCase(),
+          network: getChainConfig(token.chain, mode).networkName,
+          standard: 'TRC20',
+          balance: `${bal.balanceFormatted} ${token.symbol}`,
+          contract: token.contractAddress,
+        });
+      } else if (adapter instanceof SolanaAdapter) {
+        const bal = await adapter.getSPLBalance(token.contractAddress, walletAddr, token.decimals);
+        results.push({
+          symbol: token.symbol,
+          name: token.name,
+          chain: token.chain.toUpperCase(),
+          network: getChainConfig(token.chain, mode).networkName,
+          standard: 'SPL',
           balance: `${bal.balanceFormatted} ${token.symbol}`,
           contract: token.contractAddress,
         });
@@ -209,6 +258,7 @@ async function fetchTokenBalances(specificToken?: string): Promise<void> {
         name: token.name,
         chain: token.chain.toUpperCase(),
         network: getChainConfig(token.chain, mode).networkName,
+        standard: token.standard.toUpperCase(),
         balance: `0.0000 ${token.symbol}`,
         contract: token.contractAddress,
       });
@@ -220,6 +270,7 @@ async function fetchTokenBalances(specificToken?: string): Promise<void> {
   const table = new Table({
     head: [
       chalk.cyan.bold('Token'),
+      chalk.cyan.bold('Standard'),
       chalk.cyan.bold('Chain'),
       chalk.cyan.bold('Network'),
       chalk.cyan.bold('Balance'),
@@ -231,6 +282,7 @@ async function fetchTokenBalances(specificToken?: string): Promise<void> {
   for (const r of results) {
     table.push([
       chalk.bold.yellow(r.symbol),
+      chalk.cyan(r.standard),
       chalk.white(r.chain),
       chalk.white(r.network),
       chalk.green.bold(r.balance),
@@ -259,7 +311,7 @@ async function sendToken(tokenArg?: string, amountArg?: string, toArg?: string):
         name: 'selectedTokenId',
         message: 'Select token to send:',
         choices: tokens.map((t) => ({
-          name: `${t.symbol} (${t.name}) on ${t.chain.toUpperCase()}`,
+          name: `${t.symbol} (${t.name}) on ${t.chain.toUpperCase()} [${t.standard.toUpperCase()}]`,
           value: t.id,
         })),
       },
@@ -291,8 +343,18 @@ async function sendToken(tokenArg?: string, amountArg?: string, toArg?: string):
       {
         type: 'input',
         name: 'to',
-        message: 'Enter recipient wallet address:',
-        validate: (v: string) => (v.trim().startsWith('0x') && v.trim().length === 42 ? true : 'Must be valid 0x EVM address.'),
+        message: `Enter recipient ${token.chain.toUpperCase()} wallet address:`,
+        validate: (v: string) => {
+          const val = v.trim();
+          if (token!.chain === 'trx') {
+            return val.startsWith('T') && val.length === 34 ? true : 'Must be valid 34-character Tron address (starting with T).';
+          }
+          if (token!.chain === 'sol') {
+            return val.length >= 32 && val.length <= 44 ? true : 'Must be valid Solana Base58 public key.';
+          }
+          // EVM default
+          return val.startsWith('0x') && val.length === 42 ? true : 'Must be valid 42-character 0x EVM address.';
+        },
       },
     ]);
     to = ans.to;
@@ -301,22 +363,26 @@ async function sendToken(tokenArg?: string, amountArg?: string, toArg?: string):
   const fromAddress = getWalletAddress(token.chain, mode);
   const adapter = getChainAdapter(token.chain, mode);
 
-  if (!(adapter instanceof EthereumAdapter)) {
-    console.log(chalk.red('\n❌ Token transfers currently supported on EVM chains.\n'));
-    return;
-  }
-
-  const buildSpinner = createSpinner('Formulating ERC-20 transfer & estimating gas...').start();
+  const buildSpinner = createSpinner(`Formulating ${token.standard.toUpperCase()} token transfer & estimating fees...`).start();
   try {
-    const builtTx = await adapter.buildERC20Transfer(fromAddress, token.contractAddress, to!, amount!, token.decimals);
+    let builtTx;
+    if (adapter instanceof EthereumAdapter) {
+      builtTx = await adapter.buildERC20Transfer(fromAddress, token.contractAddress, to!, amount!, token.decimals);
+    } else if (adapter instanceof TronAdapter) {
+      builtTx = await adapter.buildTRC20Transfer(fromAddress, token.contractAddress, to!, amount!, token.decimals);
+    } else {
+      throw new Error(`Token transfers for ${token.standard.toUpperCase()} are not yet implemented.`);
+    }
+
     buildSpinner.succeed(chalk.green('Token transaction built successfully!'));
 
     console.log(chalk.bold.white('\n📋 Transaction Review:'));
     console.log(`  Token:         ${chalk.yellow.bold(token.symbol)} (${token.name})`);
+    console.log(`  Standard:      ${chalk.cyan.bold(token.standard.toUpperCase())}`);
     console.log(`  From:          ${chalk.cyan(fromAddress)}`);
     console.log(`  To:            ${chalk.cyan(to)}`);
     console.log(`  Amount:        ${chalk.yellow.bold(`${amount} ${token.symbol}`)}`);
-    console.log(`  Estimated Gas: ${chalk.red.bold(builtTx.estimatedFee)}`);
+    console.log(`  Estimated Fee: ${chalk.red.bold(builtTx.estimatedFee)}`);
     console.log(`  Contract:      ${chalk.gray(token.contractAddress)}\n`);
 
     const { confirm } = await inquirer.prompt([
@@ -342,11 +408,16 @@ async function sendToken(tokenArg?: string, amountArg?: string, toArg?: string):
       },
     ]);
 
-    const sendSpinner = createSpinner('Signing and broadcasting ERC-20 transaction...').start();
+    const sendSpinner = createSpinner(`Signing and broadcasting ${token.standard.toUpperCase()} transaction...`).start();
     try {
       const mnemonic = unlockVault(password);
       const keys = deriveAllKeys(mnemonic, undefined, mode);
-      const privateKey = keys.eth.privateKey;
+      const privateKey =
+        token.chain === 'trx'
+          ? keys.trx.privateKey
+          : token.chain === 'sol'
+          ? keys.sol.privateKey
+          : keys.eth.privateKey;
 
       const result = await adapter.signAndSendTransaction(privateKey, builtTx);
       sendSpinner.succeed(chalk.green(`Transaction broadcast successfully to ${mode}!`));
@@ -369,11 +440,11 @@ function renderTokensTable(): void {
   const table = new Table({
     head: [
       chalk.cyan.bold('Token'),
+      chalk.cyan.bold('Standard'),
       chalk.cyan.bold('Name'),
       chalk.cyan.bold('Chain'),
       chalk.cyan.bold('Decimals'),
-      chalk.cyan.bold('Standard'),
-      chalk.cyan.bold('Contract Address'),
+      chalk.cyan.bold('Contract / Mint Address'),
     ],
     style: { head: [], border: ['gray'] },
   });
@@ -381,10 +452,10 @@ function renderTokensTable(): void {
   for (const t of tokens) {
     table.push([
       chalk.bold.yellow(t.symbol),
+      chalk.cyan(t.standard.toUpperCase()),
       chalk.white(t.name),
       chalk.white(t.chain.toUpperCase()),
       chalk.white(t.decimals.toString()),
-      chalk.cyan(t.standard.toUpperCase()),
       chalk.gray(t.contractAddress),
     ]);
   }
