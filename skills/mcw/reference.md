@@ -10,6 +10,10 @@ Complete technical reference for CLI commands and MCP JSON-RPC tools for AI agen
 | :--- | :--- | :--- | :--- |
 | `mcw init` | Interactive | Generates or imports a BIP-39 mnemonic, encrypts with AES-256-GCM, derives 4 chain addresses | `mcw init` |
 | `mcw balance` | `[chain]` | Fetches real-time balances for all chains or a specified chain | `mcw balance eth` |
+| `mcw token balance` | `[token]` | Fetches live balances across ERC-20, SPL, and TRC-20 token contracts | `mcw token balance usdc-eth` |
+| `mcw token add` | Interactive | Interactive wizard to register any ERC-20, SPL, or TRC-20 token contract | `mcw token add` |
+| `mcw token send` | `[token] [amount] [to]` | Sends ERC-20 or TRC-20 tokens with fee estimation & password approval | `mcw token send usdt-trx 25 TQ7z...` |
+| `mcw token list` | None | Displays formatted table of all configured tokens | `mcw token list` |
 | `mcw network` | `[testnet \| mainnet]` | Inspects or toggles the active network environment | `mcw network mainnet` |
 | `mcw config` | `[action] [chain] [value]` | Configures RPCs, Tron flavors, and custom networks | `mcw config tron shasta` |
 | `mcw faucet` | `[chain]` | Requests automated testnet airdrops or outputs faucet portals | `mcw faucet sol` |

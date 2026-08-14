@@ -84,22 +84,35 @@ mcw config list
 mcw config
 ```
 
-### 5. Token Management (ERC-20, Sepolia USDC, LINK, SPL)
-Track, query, and transfer custom tokens directly from smart contracts:
+### 5. Multi-Chain Token Management (ERC-20, SPL, TRC-20)
+Track, query live balances, and transfer tokens directly from smart contracts across Ethereum, Solana, and Tron:
 
 ```bash
-# List all configured tokens (Built-in Sepolia USDC, LINK, Devnet USDC + Custom)
+# 1. List all tracked tokens (Pre-configured Sepolia USDC, LINK, Solana USDC + any custom tokens)
 mcw token list
 
-# Check token balances
+# 2. Check live token balances across all chains
 mcw token balance
-mcw token balance usdc-sepolia
 
-# Add any custom ERC-20 / SPL token contract
+# 3. Check live balance for a specific token
+mcw token balance usdc-eth
+mcw token balance usdt-trx
+
+# 4. Add any custom token contract (ERC-20, SPL, or TRC-20)
 mcw token add
+# Launches interactive wizard:
+# - Select Chain (ETH, TRX, SOL, or custom EVM L2)
+# - Enter Contract Address / Mint (e.g. TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs)
+# - Enter Symbol (e.g. USDT, DAI, PEPE)
+# - Enter Decimals (e.g. 6 or 18)
 
-# Send ERC-20 tokens
-mcw token send usdc-sepolia 50 0xRecipientAddress...
+# 5. Send tokens on-chain with password authorization
+mcw token send                                  # Interactive mode
+mcw token send usdc-eth 10 0x0f0B0A7eD...       # Send 10 ERC-20 USDC on Ethereum/Sepolia
+mcw token send usdt-trx 50 TQ7zfyjKkgE...       # Send 50 TRC-20 USDT on Tron Shasta/Nile
+
+# 6. Remove a custom token
+mcw token remove usdt-trx
 ```
 
 ### 6. Request Testnet Faucet / Airdrop
